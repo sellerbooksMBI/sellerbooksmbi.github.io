@@ -955,6 +955,19 @@ function saveSalesImportData(){
                         ).trim()
                         : "",
 
+                /* Nama produk dipertahankan sebagai fallback identitas
+                   khusus Shopee saat SKU kosong pada file API. */
+                itemName:
+                    currentSalesImport.marketplace === "Shopee"
+                        ? String(
+                            getFirstValue(
+                                row,
+                                currentSalesImport.headers,
+                                ["nama produk", "product name"]
+                            ) || ""
+                        ).trim()
+                        : "",
+
                 qty:
                     qty,
 
