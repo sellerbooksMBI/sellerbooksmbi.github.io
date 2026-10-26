@@ -49,6 +49,11 @@ function sellerBooksGetSalesImportIdentity(transaction){
     const orderKey=String(transaction?.orderId||"").trim().toLowerCase();
     const packingKey=String(transaction?.packingId||"").trim().toLowerCase();
     const skuKey=String(transaction?.sku||"").trim().toLowerCase();
+    /* Shopee sering tidak mengirim SKU model pada detail pesanan.
+       Gunakan nama produk hanya sebagai fallback agar dua produk
+       berbeda dalam satu order tidak saling meniadakan. */
+    const itemNameKey=String(transaction?.itemName||"").trim().toLowerCase();
+    const productKey=skuKey || (marketplaceKey==="shopee" ? "ITEM:"+itemNameKey : "");
     if(!orderKey && !packingKey)return "";
 
     /* Lazada: pertahankan setiap baris sumber sebagai transaksi terpisah.
@@ -67,7 +72,7 @@ function sellerBooksGetSalesImportIdentity(transaction){
         }
     }
 
-    return marketplaceKey+"|"+storeKey+"|"+(orderKey?"ORDER:"+orderKey:"PACKING:"+packingKey)+"|"+skuKey;
+    return marketplaceKey+"|"+storeKey+"|"+(orderKey?"ORDER:"+orderKey:"PACKING:"+packingKey)+"|"+productKey;
 }
 
 function sellerBooksGetSalesImportKeys(value){
