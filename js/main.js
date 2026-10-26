@@ -53,7 +53,7 @@ function sellerBooksGetSalesImportIdentity(transaction){
        Gunakan nama produk hanya sebagai fallback agar dua produk
        berbeda dalam satu order tidak saling meniadakan. */
     const itemNameKey=String(transaction?.itemName||"").trim().toLowerCase();
-    const productKey=skuKey || (marketplaceKey==="shopee" ? "ITEM:"+itemNameKey : "");
+    const productKey=skuKey || (marketplaceKey==="shopee" && itemNameKey ? "ITEM:"+itemNameKey : "");
     if(!orderKey && !packingKey)return "";
 
     /* Lazada: pertahankan setiap baris sumber sebagai transaksi terpisah.
