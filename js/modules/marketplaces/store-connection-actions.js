@@ -67,7 +67,10 @@ async function disconnectStoreAccount(storeId){
 
         if(error) throw error;
 
-        if(!data?.ok){
+        // Database RPC returns a boolean (RETURNS boolean), not an { ok: true } object.
+        // Accept true as success; keep compatibility with object-shaped responses if encountered.
+        const disconnectSucceeded = data === true || data?.ok === true;
+        if(!disconnectSucceeded){
             throw new Error("Koneksi tidak berhasil dicopot.");
         }
 
