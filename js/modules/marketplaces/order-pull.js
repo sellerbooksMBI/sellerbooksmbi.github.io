@@ -74,9 +74,6 @@ async function syncTikTokOrdersNowInternal(storeId){
             );
         }
 
-        const now=Math.floor(Date.now()/1000);
-        const timeFrom=now-(7*24*60*60);
-
         const response=await fetch(
             SELLERBOOKS_SUPABASE_URL+
             "/functions/v1/sellerbooks-tiktok-sync-orders",
@@ -89,9 +86,7 @@ async function syncTikTokOrdersNowInternal(storeId){
                 },
                 body:JSON.stringify({
                     connection_id:String(connection.id),
-                    store_id:String(store.id),
-                    time_from:timeFrom,
-                    time_to:now
+                    store_id:String(store.id)
                 })
             }
         );
