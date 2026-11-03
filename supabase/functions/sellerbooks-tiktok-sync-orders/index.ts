@@ -290,7 +290,23 @@ Deno.serve(async req=>{
     const em=String(user.email).toLowerCase().trim(),requestedConnectionId=String(b.connection_id||"").trim(),requestedStoreId=String(b.store_id||"").trim();
     if(!requestedConnectionId||!requestedStoreId)return out({ok:false,error:"connection_id and store_id are required"},400);
     const connRes=await rest(sk,"sellerbooks_api_connections?id=eq."+encodeURIComponent(requestedConnectionId)+"&store_id=eq."+encodeURIComponent(requestedStoreId)+"&owner_user_id=eq."+encodeURIComponent(String(user.id))+"&marketplace=eq.TikTok%20Shop&select=*",{method:"GET"});
-    if(!connRes.ok)return out({ok:false,error:"CONNECTION_LOOKUP_FAILED"},500);
+    if(!connRes.ok){
+      const lookupStatus=connRes.status;
+      const lookupBody=String(await txt(connRes)).slice(0,800);
+      let lookupDetail:any={};
+      try{lookupDetail=JSON.parse(lookupBody)}catch{lookupDetail={message:lookupBody}}
+      // Safe PostgREST diagnostics; never expose tokens or secret values.
+      return out({
+        ok:false,
+        error:"CONNECTION_LOOKUP_FAILED",
+        diagnostic:{
+          http_status:lookupStatus,
+          code:String(lookupDetail?.code||"").slice(0,80),
+          message:String(lookupDetail?.message||lookupDetail?.hint||"Database lookup request failed").slice(0,400),
+          details:String(lookupDetail?.details||"").slice(0,250)
+        }
+      },500);
+    }
     const selectedConnectionRows=await connRes.json();
     const selectedConnection=Array.isArray(selectedConnectionRows)?selectedConnectionRows[0]:null;
     if(!selectedConnection)return out({ok:false,error:"CONNECTION_NOT_OWNED_OR_NOT_FOUND"},403);
