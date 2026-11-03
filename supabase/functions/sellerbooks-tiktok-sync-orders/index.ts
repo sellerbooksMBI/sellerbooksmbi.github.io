@@ -187,10 +187,9 @@ async function enqueueTikTokExcelPayload(c:any,rows:any[],foundCount:number,sk:s
 
 async function run(c:any,from:number,to:number,token:string,pk:string,sk:string){
   if(!c.vault_secret_id) throw Error("TIKTOK_CREDENTIAL_VAULT_ID_MISSING");
-  const vr=await rest(sk,"decrypted_secrets?id=eq."+encodeURIComponent(String(c.vault_secret_id))+"&select=id,decrypted_secret",{method:"GET"});
+  const vr=await rest(sk,"rpc/sellerbooks_tiktok_read_credential",{method:"POST",body:JSON.stringify({p_connection_id:c.id})});
   if(!vr.ok) throw Error("TIKTOK_CREDENTIAL_STORE_READ_ERROR:"+vr.status+":"+String(await vr.text()).slice(0,300));
-  const vv=await vr.json(), secretValue=Array.isArray(vv)?vv[0]?.decrypted_secret:null;
-  let z:any=null; try{z=typeof secretValue==="string"?JSON.parse(secretValue):secretValue}catch{throw Error("TIKTOK_CREDENTIAL_INVALID_JSON")}
+  let z:any=null; try{z=await vr.json()}catch{throw Error("TIKTOK_CREDENTIAL_INVALID_JSON")}
   if(!z||typeof z!=="object") throw Error("TIKTOK_CREDENTIAL_INVALID_JSON");
   if(!z.access_token||!z.shop_cipher) throw Error("TIKTOK_CREDENTIAL_INCOMPLETE");
   z.app_key=z.app_key||K; z.api_base_url=(z.api_base_url||B).replace(/\/$/,"");
