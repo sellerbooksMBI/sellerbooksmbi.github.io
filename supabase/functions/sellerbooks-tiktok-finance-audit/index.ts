@@ -159,25 +159,36 @@ Deno.serve(async (req: Request) => {
       settledError = error instanceof Error ? error.message : String(error);
     }
 
-    // Estimated unsettled transaction lookup. Estimates are explicitly not final settlement values.
-    let unsettled: any = null;
-    let unsettledError: string | null = null;
-    try {
-      const now = Math.floor(Date.now() / 1000);
-      const from = Number(body.search_time_ge || now - 14 * 86400);
-      const to = Number(body.search_time_lt || now + 60);
-      unsettled = await tiktokGet(
-        credential,
-        "/finance/202507/orders/unsettled",
-        {
-          page_size: "100",
-          sort_field: "order_create_time",
-          sort_order: "DESC",
-          search_time_ge: String(from),
-          search_time_lt: String(to),
-        },
-      );
-    } catch (error) {
+    // Final settlement only. Pending estimates are deliberately excluded.
+    const settledData = settled?.data ?? null;
+    const settledTransactions = Array.isArray(settledData?.transactions)
+      ? settledData.transactions
+      : [];
+    const settledSkuTransactions = Array.isArray(settledData?.sku_transactions)
+      ? settledData.sku_transactions
+      : [];
+
+    return response({
+      ok: true,
+      mode: "READ_ONLY_FINAL_SETTLEMENT_AUDIT",
+      marketplace: "TikTok Shop",
+      order_id: orderId,
+      connection_id: connection.id,
+      settlement_status: settled
+        ? "SETTLEMENT_DATA_RETURNED"
+        : "SETTLEMENT_DATA_NOT_AVAILABLE",
+      settled_lookup: settled
+        ? {
+          found: Boolean(settledData),
+          data: settledData,
+          transaction_count: settledTransactions.length,
+          sku_transaction_count: settledSkuTransactions.length,
+          request_id: settled.request_id ?? null,
+        }
+        : { found: false, error: settledError },
+      note: "Final settlement source only. Unsettled estimates and configured percentage fees are not used. No sales, import queue, HPP, profit, refund, or snapshot data was modified.",
+    });
+  } catch (error) {
       unsettledError = error instanceof Error ? error.message : String(error);
     }
 
