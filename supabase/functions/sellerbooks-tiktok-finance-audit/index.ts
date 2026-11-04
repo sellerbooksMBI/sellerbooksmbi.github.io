@@ -189,42 +189,6 @@ Deno.serve(async (req: Request) => {
       note: "Final settlement source only. Unsettled estimates and configured percentage fees are not used. No sales, import queue, HPP, profit, refund, or snapshot data was modified.",
     });
   } catch (error) {
-      unsettledError = error instanceof Error ? error.message : String(error);
-    }
-
-    const unsettledTransactions = Array.isArray(unsettled?.data?.transactions)
-      ? unsettled.data.transactions
-      : [];
-    const matchingUnsettled = unsettledTransactions.filter((item: any) =>
-      String(item?.order_id || item?.adjustment_order_id || "") === orderId
-    );
-
-    return response({
-      ok: true,
-      mode: "READ_ONLY_FINANCE_AUDIT",
-      marketplace: "TikTok Shop",
-      order_id: orderId,
-      connection_id: connection.id,
-      settled_lookup: settled
-        ? { found: true, data: settled.data ?? null, request_id: settled.request_id ?? null }
-        : { found: false, error: settledError },
-      unsettled_lookup: unsettled
-        ? {
-          found: matchingUnsettled.length > 0,
-          total_count_in_page: unsettledTransactions.length,
-          matching_transactions: matchingUnsettled,
-          next_page_available: Boolean(unsettled?.data?.next_page_token),
-          estimated_totals: {
-            settlement: unsettled?.data?.sum_est_settlement_amount ?? null,
-            revenue: unsettled?.data?.sum_est_revenue_amount ?? null,
-            fees: unsettled?.data?.sum_est_fee_amount ?? null,
-            adjustments: unsettled?.data?.sum_est_adjustment_amount ?? null,
-          },
-        }
-        : { found: false, error: unsettledError },
-      note: "Read-only audit only. No sales, import queue, HPP, profit, refund, or snapshot data was modified. Unsettled values are estimates; settled values must come from statement transactions.",
-    });
-  } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return response({ ok: false, error: message }, 500);
   }
