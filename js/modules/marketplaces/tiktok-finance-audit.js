@@ -2,7 +2,8 @@
    SELLERBOOKS TIKTOK FINANCE AUDIT
    Read-only diagnostic. Does not write sales/import data.
 ===================================================== */
-window.sellerBooksAuditTikTokOrder = async function(orderId, orderCreateTime, storeId){
+window.sellerBooksAuditTikTokOrder = async function(orderId, orderCreateTime, storeId, options){
+    options=options||{};
     const order=String(orderId||"").trim();
     const createTime=Number(orderCreateTime||0);
     if(!order || !createTime){
@@ -84,7 +85,7 @@ window.sellerBooksAuditTikTokOrder = async function(orderId, orderCreateTime, st
     console.info("TikTok Finance audit selected source:", audit?.source_mode || "NONE",
         "seven-component amount:", audit?.admin_marketplace_total?.amount,
         "reconciliation:", reconciliation || "not available");
-    if(typeof sellerBooksAlert==="function"){
+    if(!options.silent && typeof sellerBooksAlert==="function"){
         const persistenceMessage=financePersistence.saved
             ? " Data Finance tersimpan ke cloud."
             : " Data audit belum tersimpan ke cloud: "+String(financePersistence.error||financePersistence.reason||"modul penyimpanan belum tersedia")+".";
