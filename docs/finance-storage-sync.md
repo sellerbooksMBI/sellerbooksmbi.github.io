@@ -40,6 +40,10 @@ The audit keeps each amount's source paths and reconciliation metadata. Missing 
 - Tested that an unsettled estimate cannot replace an existing complete settled record inside a rolled-back transaction.
 - Supabase performance advisor no longer reports the Finance store foreign key as unindexed. New-table indexes may still appear as unused until actual Finance records are synced.
 
+## Manual audit UI
+
+Connected TikTok Shop stores now show a **Uji Finance / Finance Audit** action. Enter one TikTok Order ID and its order-creation date/time to run the read-only audit. The panel displays the seven component amounts and the selected settled/estimate source; the audit helper reports whether cloud persistence succeeded.
+
 ## Next steps
 
 1. Run one unsettled and one settled TikTok Shop Finance audit through the SellerBooksMBI UI.
