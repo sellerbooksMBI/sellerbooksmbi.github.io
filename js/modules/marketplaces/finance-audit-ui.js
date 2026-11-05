@@ -165,6 +165,15 @@
             const source = audit.source_mode === "SETTLED_FINAL"
                 ? (english ? "Settled final" : "Settled final")
                 : (english ? "Unsettled estimate" : "Estimasi unsettled");
+            const reconciliation = audit.reconciliation || {};
+            const difference = Number(reconciliation.unmapped_difference);
+            const reconciliationText = reconciliation.reconciled === true
+                ? (english ? "Fee/tax aggregate reconciliation: matched" : "Rekonsiliasi total fee/tax: cocok")
+                : Number.isFinite(difference)
+                    ? (english
+                        ? "Fee/tax aggregate difference: " + formatAmount(difference) + " (logistics is reconciled separately)"
+                        : "Selisih total fee/tax: " + formatAmount(difference) + " (logistik direkonsiliasi terpisah)")
+                    : (english ? "Fee/tax aggregate reconciliation: unavailable" : "Rekonsiliasi total fee/tax: belum tersedia");
             resultBox.innerHTML =
                 '<div class="sb-finance-audit-summary">' +
                     '<strong>' + (complete
@@ -173,6 +182,7 @@
                     '<span>' + source + '</span>' +
                 '</div>' +
                 '<div class="sb-finance-audit-list">' + rows + '</div>' +
+                '<p class="sb-finance-audit-reconciliation">' + reconciliationText + '</p>' +
                 '<div class="sb-finance-audit-total"><span>' +
                     (english ? "Seven-component total" : "Total tujuh komponen") +
                     '</span><strong>' + formatAmount(audit.admin_marketplace_total?.amount) + '</strong></div>' +
