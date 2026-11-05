@@ -87,114 +87,63 @@ const tiktokGet = async (
 
 
 type AmountValue = { found: boolean; amount: number; occurrences: number; paths: string[] };
-
-const normalizeAmount = (value: unknown): number | null => {
-  if (value === null || value === undefined || value === "" || value === "-") return null;
+const normalizeAmount = (value: unknown): number => {
+  if (value === null || value === undefined || value === "" || value === "-") return 0;
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
-    const cleaned = value.replace(/,/g, "").trim();
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : null;
+    const parsed = Number(value.replace(/,/g, "").trim());
+    return Number.isFinite(parsed) ? parsed : 0;
   }
-  if (typeof value === "object" && value !== null) {
-    const item = value as Record<string, unknown>;
-    for (const key of ["amount", "value", "currency_amount"]) {
-      const parsed = normalizeAmount(item[key]);
-      if (parsed !== null) return parsed;
-    }
-  }
-  return null;
+  return 0;
 };
-
-const collectNamedAmounts = (root: unknown, acceptedNames: string[]): AmountValue => {
-  const accepted = new Set(acceptedNames.map((name) => name.toLowerCase()));
-  const matches: { amount: number; path: string }[] = [];
-  const walk = (value: unknown, path: string, depth: number) => {
-    if (!value || typeof value !== "object" || depth > 12) return;
-    if (Array.isArray(value)) {
-      value.forEach((child, index) => walk(child, path + "[" + index + "]", depth + 1));
-      return;
-    }
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      const nextPath = path ? path + "." + key : key;
-      if (accepted.has(key.toLowerCase())) {
-        const amount = normalizeAmount(child);
-        if (amount !== null) matches.push({ amount, path: nextPath });
-      }
-      if (child && typeof child === "object") walk(child, nextPath, depth + 1);
-    }
-  };
-  walk(root, "", 0);
-  return {
-    found: matches.length > 0,
-    amount: matches.reduce((sum, item) => sum + item.amount, 0),
-    occurrences: matches.length,
-    paths: matches.map((item) => item.path),
-  };
+const readPath = (root: any, path: string): unknown =>
+  path.split(".").reduce((value: any, key) => value && typeof value === "object" ? value[key] : undefined, root);
+const sumExactPath = (rows: any[], path: string): AmountValue => {
+  const matches = rows.map((row, index) => ({ value: readPath(row, path), path: "[" + index + "]." + path }))
+    .filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
+  return { found: matches.length > 0, amount: matches.reduce((sum, item) => sum + normalizeAmount(item.value), 0),
+    occurrences: matches.length, paths: matches.map((item) => item.path) };
 };
-
-const buildTikTokFeeAudit = (data: any) => {
-  const skuRows = Array.isArray(data?.sku_transactions) ? data.sku_transactions : [];
+const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETTLED_FINAL") => {
   const orderRows = Array.isArray(data?.transactions) ? data.transactions : [];
-  const source = { sku_transactions: skuRows, transactions: orderRows };
-
-  const fields = {
-    platform_commission: collectNamedAmounts(source, ["platform_commission_amount"]),
-    mall_service: collectNamedAmounts(source, ["mall_service_fee_amount"]),
-    affiliate: collectNamedAmounts(source, ["affiliate_commission_amount"]),
-    dynamic_commission: collectNamedAmounts(source, ["dynamic_commission_amount"]),
-    order_processing: collectNamedAmounts(source, ["transaction_fee_amount"]),
-    pph22: collectNamedAmounts(source, ["article_22_income_tax_withheld"]),
+  const skuRows = Array.isArray(data?.sku_transactions) ? data.sku_transactions : [];
+  const feeRowsFor = (path: string) => {
+    const skuValue = sumExactPath(skuRows, path);
+    return skuValue.found ? skuValue : sumExactPath(orderRows, path);
   };
-
-  // Shipping charge is intentionally not guessed: TikTok returns shipping
-  // settlement in a separate structure and the seller-paid subcomponent must
-  // be confirmed from the actual Indonesia response before it is included.
-  const logisticsCandidates = collectNamedAmounts(source, [
-    "seller_shipping_fee", "seller_shipping_cost", "shipping_fee_paid_by_seller",
-    "seller_paid_shipping_fee", "shipping_cost_paid_by_seller",
-  ]);
-
-  const allKnown = Object.values(fields);
-  const completeKnown = allKnown.every((item) => item.found);
-  const totalKnown = allKnown.reduce((sum, item) => sum + item.amount, 0);
-
+  const fields = {
+    platform_commission: feeRowsFor("fee_tax_breakdown.fee.platform_commission_amount"),
+    mall_service: feeRowsFor("fee_tax_breakdown.fee.mall_service_fee_amount"),
+    affiliate: feeRowsFor("fee_tax_breakdown.fee.affiliate_commission_amount"),
+    dynamic_commission: feeRowsFor("fee_tax_breakdown.fee.dynamic_commission_amount"),
+    order_processing: feeRowsFor("fee_tax_breakdown.fee.transaction_fee_amount"),
+    pph22: feeRowsFor("fee_tax_breakdown.tax.article_22_income_tax_withheld"),
+  };
+  const logisticsOrder = sumExactPath(orderRows, "shipping_cost_breakdown.logistics_service_fee");
+  const logisticsSku = sumExactPath(skuRows, "shipping_cost_breakdown.logistics_service_fee");
+  const logistics = logisticsOrder.found ? logisticsOrder : logisticsSku;
+  const six = Object.values(fields);
+  const currency = data?.currency ?? orderRows[0]?.currency ?? skuRows[0]?.currency ?? null;
   return {
-    currency: data?.currency ?? null,
+    source_mode: sourceMode, currency,
     components: {
-      platform_commission: fields.platform_commission,
-      mall_service_fee: fields.mall_service,
-      affiliate_commission: fields.affiliate,
-      dynamic_commission: fields.dynamic_commission,
-      order_processing_fee: fields.order_processing,
-      pph_22: fields.pph22,
-      seller_borne_logistics: {
-        ...logisticsCandidates,
-        verified: false,
-        included_in_total: false,
-        note: "Perlu verifikasi field shipping Indonesia dari respons settlement nyata.",
-      },
+      platform_commission: fields.platform_commission, mall_service_fee: fields.mall_service,
+      affiliate_commission: fields.affiliate, dynamic_commission: fields.dynamic_commission,
+      order_processing_fee: fields.order_processing, pph_22: fields.pph22,
+      seller_borne_logistics: { ...logistics, verified_field: "shipping_cost_breakdown.logistics_service_fee",
+        description: "TikTok documents this as a per-order seller logistics service fee.", included_in_total: logistics.found },
     },
-    subtotal_known_components: {
-      amount: totalKnown,
-      currency: data?.currency ?? null,
-      complete: completeKnown,
-      note: "Subtotal diagnostik; belum menjadi Admin Marketplace final.",
-    },
-    sku_transaction_count: skuRows.length,
-    order_transaction_count: orderRows.length,
-    readiness: completeKnown && logisticsCandidates.found
-      ? "COMPONENTS_PRESENT_REQUIRES_AMOUNT_SIGN_AND_SCOPE_VALIDATION"
-      : "INCOMPLETE_COMPONENT_MAPPING",
-    warnings: [
-      "Nilai ini diagnostik dan belum dipakai dalam perhitungan laba.",
-      "Affiliate commission diambil dari field agregat; subkomponen affiliate tidak dijumlahkan lagi agar tidak double count.",
-      "Subtotal belum mengalokasikan komponen order-level ke SKU.",
-      "Logistik seller-borne tidak dimasukkan sampai field settlement Indonesia diverifikasi.",
-    ],
+    admin_marketplace_total: { amount: six.reduce((sum, item) => sum + item.amount, 0) + logistics.amount,
+      currency, complete: six.every((item) => item.found) && logistics.found,
+      note: "Seven-component total. Missing fields remain unconfirmed; '-' and numeric zero are zero." },
+    sku_transaction_count: skuRows.length, order_transaction_count: orderRows.length,
+    readiness: six.every((item) => item.found) && logistics.found ? "SEVEN_COMPONENTS_PRESENT" : "INCOMPLETE_COMPONENT_MAPPING",
+    warnings: ["Exact documented paths only; SKU rows take precedence over order rows to prevent duplicate aggregation.",
+      "Logistics uses the documented order-level shipping_cost_breakdown.logistics_service_fee.",
+      "Affiliate aggregate only; affiliate subcomponents are not added again.",
+      sourceMode === "UNSETTLED_ESTIMATE" ? "Unsettled values are estimates and may change before settlement." : "Settled values are final statement values."],
   };
 };
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return response({ ok: false, error: "Method not allowed" }, 405);
@@ -269,18 +218,38 @@ Deno.serve(async (req: Request) => {
       settledError = error instanceof Error ? error.message : String(error);
     }
 
-    // Final settlement only. Pending estimates are deliberately excluded.
-    const settledData = settled?.data ?? null;
-    const settledTransactions = Array.isArray(settledData?.transactions)
-      ? settledData.transactions
-      : [];
-    const settledSkuTransactions = Array.isArray(settledData?.sku_transactions)
-      ? settledData.sku_transactions
-      : [];
+    // Unsettled estimates are queried separately using TikTok's order creation-time window.
+    const orderCreateTime = Number(body.order_create_time || 0);
+    let unsettledMatch: any = null;
+    let unsettledError: string | null = null;
+    if (orderCreateTime > 0) {
+      try {
+        const from = Math.max(1735689600, orderCreateTime - 86400);
+        const to = orderCreateTime + 86400;
+        let pageToken = "";
+        for (let page = 0; page < 20; page++) {
+          const query: Record<string, string> = {
+            search_time_ge: String(from), search_time_lt: String(to),
+            sort_field: "order_create_time", sort_order: "ASC", page_size: "100",
+          };
+          if (pageToken) query.page_token = pageToken;
+          const pageData = await tiktokGet(credential, "/finance/202507/orders/unsettled", query);
+          const rows = Array.isArray(pageData?.data?.transactions) ? pageData.data.transactions : [];
+          unsettledMatch = rows.find((row: any) => String(row?.order_id || "") === orderId) || unsettledMatch;
+          if (unsettledMatch) break;
+          pageToken = String(pageData?.data?.next_page_token || "");
+          if (!pageToken) break;
+        }
+      } catch (error) {
+        unsettledError = error instanceof Error ? error.message : String(error);
+      }
+    } else {
+      unsettledError = "ORDER_CREATE_TIME_REQUIRED_FOR_UNSETTLED_LOOKUP";
+    }
 
     return response({
       ok: true,
-      mode: "READ_ONLY_FINAL_SETTLEMENT_AUDIT",
+      mode: "READ_ONLY_TIKTOK_FEE_COMPONENT_AUDIT",
       marketplace: "TikTok Shop",
       order_id: orderId,
       connection_id: connection.id,
@@ -294,10 +263,14 @@ Deno.serve(async (req: Request) => {
           transaction_count: settledTransactions.length,
           sku_transaction_count: settledSkuTransactions.length,
           request_id: settled.request_id ?? null,
-          fee_component_audit: buildTikTokFeeAudit(settledData),
+          fee_component_audit: buildTikTokFeeAudit(settledData, "SETTLED_FINAL"),
         }
         : { found: false, error: settledError },
-      note: "Final settlement source only. Unsettled estimates and configured percentage fees are not used. No sales, import queue, HPP, profit, refund, or snapshot data was modified.",
+      unsettled_lookup: unsettledMatch
+        ? { found: true, transaction: unsettledMatch,
+            fee_component_audit: buildTikTokFeeAudit({ transactions: [unsettledMatch] }, "UNSETTLED_ESTIMATE") }
+        : { found: false, error: unsettledError },
+      note: "Read-only seven-component audit for settled and unsettled TikTok orders. No sales, import queue, HPP, profit, refund, or snapshot data is modified.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
