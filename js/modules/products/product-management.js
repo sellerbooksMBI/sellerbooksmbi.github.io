@@ -873,7 +873,11 @@ async function saveProduct(){
        Dengan begitu klik Simpan langsung terasa responsif.
     */
     requestAnimationFrame(function(){
-        renderProducts();        renderNotifications();
+        renderProducts();
+        renderNotifications();
+        if(typeof sellerBooksRefreshReportViewsAfterMasterChange==="function"){
+            sellerBooksRefreshReportViewsAfterMasterChange();
+        }
     });
 
     /*
