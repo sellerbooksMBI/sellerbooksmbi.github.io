@@ -11,6 +11,42 @@
         return document.getElementById(id);
     };
 
+    function applyAuditLanguage(){
+        const english = sellerBooksCurrentLanguage() === "en";
+        const copy = english ? {
+            title:"TikTok Finance Audit",
+            intro:"Review the seven cost components from TikTok transaction data.",
+            store:"Store account:",
+            order:"TikTok Order ID",
+            date:"Order creation date and time",
+            dateHelp:"Use the order creation time from TikTok, not payment or shipping time. This timestamp is used to find unsettled data and settled statements.",
+            generalHelp:"This audit reads TikTok API data and stores the Finance result per Order ID. It does not change sales, COGS, profit, refunds, imports, or snapshots.",
+            close:"Close",
+            run:"Run Finance Audit"
+        } : {
+            title:"Audit Finance TikTok",
+            intro:"Periksa tujuh komponen biaya dari data transaksi TikTok.",
+            store:"Akun Toko:",
+            order:"Order ID TikTok",
+            date:"Tanggal & waktu pesanan dibuat",
+            dateHelp:"Gunakan waktu pembuatan pesanan dari TikTok, bukan waktu pembayaran atau pengiriman. Waktu ini dipakai untuk mencari data unsettled dan statement settled.",
+            generalHelp:"Audit ini hanya membaca API TikTok dan menyimpan hasil Finance per Order ID. Tidak mengubah penjualan, HPP, laba, refund, import, atau snapshot.",
+            close:"Tutup",
+            run:"Jalankan Audit Finance"
+        };
+        byId("financeAuditTitle").textContent = copy.title;
+        byId("financeAuditIntro").textContent = copy.intro;
+        byId("financeAuditStoreLabel").textContent = copy.store;
+        byId("financeAuditOrderLabel").textContent = copy.order;
+        byId("financeAuditDateLabel").textContent = copy.date;
+        byId("financeAuditDateHelp").textContent = copy.dateHelp;
+        byId("financeAuditGeneralHelp").textContent = copy.generalHelp;
+        byId("financeAuditCloseIcon").setAttribute("aria-label",copy.close);
+        byId("financeAuditCloseButton").textContent = copy.close;
+        byId("financeAuditRunButton").textContent = copy.run;
+        byId("financeAuditOrderId").placeholder = english ? "Enter TikTok Order ID" : "Masukkan Order ID";
+    }
+
     window.openTikTokFinanceAudit = function(storeId){
         const store = Array.isArray(stores)
             ? stores.find(function(item){ return String(item.id) === String(storeId); })
@@ -36,6 +72,7 @@
         }
 
         activeStoreId = String(store.id);
+        applyAuditLanguage();
         byId("financeAuditStoreName").textContent = String(store.name || "");
         byId("financeAuditOrderId").value = "";
         byId("financeAuditOrderCreatedAt").value = "";
@@ -147,9 +184,9 @@
             return response;
         }catch(error){
             console.error("TikTok Finance audit UI failed:",error);
-            resultBox.innerHTML = '<p class="sb-finance-audit-error">' +
-                String(error?.message || (english ? "Finance audit failed." : "Audit Finance gagal.")) +
-                '</p>';
+            resultBox.innerHTML = '<p class="sb-finance-audit-error"></p>';
+            resultBox.querySelector("p").textContent =
+                String(error?.message || (english ? "Finance audit failed." : "Audit Finance gagal."));
             sellerBooksAlert(
                 (english ? "Finance audit failed:\n\n" : "Audit Finance gagal:\n\n") +
                 String(error?.message || error),
