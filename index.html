@@ -4023,28 +4023,28 @@
         <div class="sb-finance-audit-header">
             <div>
                 <h3 id="financeAuditTitle">Audit Finance TikTok</h3>
-                <p>Periksa tujuh komponen biaya dari data transaksi TikTok.</p>
+                <p id="financeAuditIntro">Periksa tujuh komponen biaya dari data transaksi TikTok.</p>
             </div>
-            <button type="button" class="sb-finance-audit-close" onclick="closeTikTokFinanceAudit()" aria-label="Tutup">×</button>
+            <button type="button" class="sb-finance-audit-close" onclick="closeTikTokFinanceAudit()" id="financeAuditCloseIcon" aria-label="Tutup">×</button>
         </div>
         <div class="sb-finance-audit-body">
             <div class="sb-finance-audit-store">
-                Akun Toko: <strong id="financeAuditStoreName">-</strong>
+                <span id="financeAuditStoreLabel">Akun Toko:</span> <strong id="financeAuditStoreName">-</strong>
             </div>
             <div class="sb-finance-audit-field">
-                <label for="financeAuditOrderId">Order ID TikTok</label>
+                <label id="financeAuditOrderLabel" for="financeAuditOrderId">Order ID TikTok</label>
                 <input type="text" id="financeAuditOrderId" autocomplete="off" placeholder="Masukkan Order ID">
             </div>
             <div class="sb-finance-audit-field">
-                <label for="financeAuditOrderCreatedAt">Tanggal & waktu pesanan dibuat</label>
+                <label id="financeAuditDateLabel" for="financeAuditOrderCreatedAt">Tanggal & waktu pesanan dibuat</label>
                 <input type="datetime-local" id="financeAuditOrderCreatedAt">
-                <p class="sb-finance-audit-help">Gunakan waktu pembuatan pesanan dari TikTok, bukan waktu pembayaran atau pengiriman. Waktu ini dipakai untuk mencari data unsettled dan statement settled.</p>
+                <p id="financeAuditDateHelp" class="sb-finance-audit-help">Gunakan waktu pembuatan pesanan dari TikTok, bukan waktu pembayaran atau pengiriman. Waktu ini dipakai untuk mencari data unsettled dan statement settled.</p>
             </div>
-            <p class="sb-finance-audit-help">Audit ini hanya membaca API TikTok dan menyimpan hasil Finance per Order ID. Tidak mengubah penjualan, HPP, laba, refund, import, atau snapshot.</p>
+            <p id="financeAuditGeneralHelp" class="sb-finance-audit-help">Audit ini hanya membaca API TikTok dan menyimpan hasil Finance per Order ID. Tidak mengubah penjualan, HPP, laba, refund, import, atau snapshot.</p>
         </div>
         <div id="financeAuditResult" class="sb-finance-audit-result" aria-live="polite"></div>
         <div class="sb-finance-audit-actions">
-            <button type="button" class="sb-finance-audit-cancel" onclick="closeTikTokFinanceAudit()">Tutup</button>
+            <button type="button" id="financeAuditCloseButton" class="sb-finance-audit-cancel" onclick="closeTikTokFinanceAudit()">Tutup</button>
             <button type="button" id="financeAuditRunButton" class="sb-finance-audit-run" onclick="runTikTokFinanceAudit()">Jalankan Audit Finance</button>
         </div>
     </div>
