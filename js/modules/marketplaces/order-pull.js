@@ -145,6 +145,20 @@ async function syncTikTokOrdersNowInternal(storeId){
 
         if(result.status==="RAW_FILE_READY"){
             await sellerBooksDispatchExcelQueue({showResult:true});
+            const financeOrders=Array.isArray(result.finance_orders)?result.finance_orders:[];
+            for(const financeOrder of financeOrders){
+                if(typeof window.sellerBooksAuditTikTokOrder!=="function")break;
+                try{
+                    await window.sellerBooksAuditTikTokOrder(
+                        financeOrder.order_id,
+                        financeOrder.order_create_time,
+                        String(store.id),
+                        {silent:true}
+                    );
+                }catch(financeError){
+                    console.warn("Finance TikTok belum berhasil disinkronkan untuk order "+financeOrder.order_id+":",financeError);
+                }
+            }
             return;
         }
 
