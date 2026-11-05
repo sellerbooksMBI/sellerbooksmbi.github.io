@@ -300,24 +300,35 @@ Deno.serve(async (req: Request) => {
           const statementId = String(statement?.id || "");
           if (!statementId) continue;
           statementLookup.statements_checked++;
-          const detail = await tiktokGet(credential,
-            "/finance/202501/statements/" + encodeURIComponent(statementId) + "/statement_transactions",
-            { sort_field: "order_create_time", sort_order: "ASC", page_size: "100" });
-          const rows = Array.isArray(detail?.data?.transactions) ? detail.data.transactions : [];
-          const matches = rows.filter((row: any) =>
-            String(row?.order_id || row?.adjustment_order_id || "") === orderId);
-          if (matches.length) {
-            statementLookup.found = true;
-            statementLookup.matched_statement_id = statementId;
-            statementLookup.transaction_count += matches.length;
-            statementLookup.matching_transactions.push(...matches);
-            statementLookup.statement_summary = statement;
-            statementLookup.statement_aggregate = detail?.data?.total_settlement_breakdown ??
-              detail?.data?.total_fee_tax_amount ?? null;
-            break;
+          let detailPageToken = "";
+          let statementDetail: any = null;
+          for (let detailPage = 0; detailPage < 10; detailPage++) {
+            const detailQuery: Record<string, string> = {
+              sort_field: "order_create_time", sort_order: "ASC", page_size: "100",
+            };
+            if (detailPageToken) detailQuery.page_token = detailPageToken;
+            const detail = await tiktokGet(credential,
+              "/finance/202501/statements/" + encodeURIComponent(statementId) + "/statement_transactions",
+              detailQuery);
+            statementDetail = detail;
+            const rows = Array.isArray(detail?.data?.transactions) ? detail.data.transactions : [];
+            const matches = rows.filter((row: any) =>
+              String(row?.order_id || row?.adjustment_order_id || "") === orderId);
+            if (matches.length) {
+              statementLookup.found = true;
+              statementLookup.matched_statement_id = statementId;
+              statementLookup.transaction_count += matches.length;
+              statementLookup.matching_transactions.push(...matches);
+              statementLookup.statement_summary = statement;
+              statementLookup.statement_aggregate = detail?.data?.total_settlement_breakdown ??
+                detail?.data?.total_fee_tax_amount ?? null;
+              break;
+            }
+            detailPageToken = String(detail?.data?.next_page_token || "");
+            if (!detailPageToken) break;
+            if (detailPage === 9) statementLookup.transaction_pages_truncated = true;
           }
-          const nextToken = String(detail?.data?.next_page_token || "");
-          if (nextToken) statementLookup.pagination_available = true;
+          if (statementLookup.found) break;
         }
         if (statements.length > 45) statementLookup.truncated = true;
       } catch (error) {
