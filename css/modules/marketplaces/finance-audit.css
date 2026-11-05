@@ -120,3 +120,13 @@
     .sb-finance-audit-actions,.sb-finance-audit-result{padding-left:16px;padding-right:16px;}
     .sb-finance-audit-summary{flex-direction:column;gap:4px;}
 }
+
+.sb-finance-audit-reconciliation{
+    margin:10px 0 0;
+    padding:9px 11px;
+    border-radius:8px;
+    background:#f8fafc;
+    color:#475569;
+    font-size:12px;
+    line-height:1.5;
+}
