@@ -2,7 +2,7 @@
    SELLERBOOKS TIKTOK FINANCE AUDIT
    Read-only diagnostic. Does not write sales/import data.
 ===================================================== */
-async function sellerBooksAuditTikTokOrder(orderId, orderCreateTime, storeId){
+window.sellerBooksAuditTikTokOrder = async function(orderId, orderCreateTime, storeId){
     const order=String(orderId||"").trim();
     const createTime=Number(orderCreateTime||0);
     if(!order || !createTime){
