@@ -1,5 +1,5 @@
 -- SellerBooks Finance order-level storage.
--- Apply only after reviewing this migration on the finance feature branch.
+-- SellerBooksMBI only. Legacy SellerBooks production is not touched.
 -- Existing sellerbooks_user_data and historical sales snapshots are untouched.
 
 create table if not exists public.sellerbooks_finance_orders (
@@ -22,7 +22,11 @@ create table if not exists public.sellerbooks_finance_orders (
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     constraint sellerbooks_finance_orders_identity
-        unique (owner_user_id, store_id, marketplace_id, order_id)
+        unique (owner_user_id, store_id, marketplace_id, order_id),
+    constraint sellerbooks_finance_orders_store_fkey
+        foreign key (owner_user_id, marketplace_id, store_id)
+        references public.sellerbooks_stores (owner_user_id, marketplace_id, id)
+        on update cascade on delete cascade
 );
 
 create index if not exists sellerbooks_finance_orders_owner_date_idx
@@ -38,13 +42,13 @@ language plpgsql
 set search_path = public
 as $$
 begin
-    -- Never let a later estimate downgrade an order already marked settled.
+    -- A later estimate must never downgrade a settled order.
     if old.finance_status = 'SETTLED_FINAL'
        and new.finance_status = 'UNSETTLED_ESTIMATE' then
         return old;
     end if;
 
-    -- Do not replace a complete settled record with an incomplete settled response.
+    -- An incomplete settled response must not replace a complete settled record.
     if old.finance_status = 'SETTLED_FINAL'
        and old.components_complete
        and new.finance_status = 'SETTLED_FINAL'
@@ -65,18 +69,17 @@ for each row execute function public.sellerbooks_protect_settled_finance_order()
 
 alter table public.sellerbooks_finance_orders enable row level security;
 
+-- Match SellerBooks' existing client-data approval and Core Admin access model.
 drop policy if exists sellerbooks_finance_orders_select_own
     on public.sellerbooks_finance_orders;
 create policy sellerbooks_finance_orders_select_own
 on public.sellerbooks_finance_orders
 for select to authenticated
 using (
-    owner_user_id = auth.uid()
-    and exists (
-        select 1
-        from public.sellerbooks_stores s
-        where s.id = sellerbooks_finance_orders.store_id
-          and s.owner_user_id = auth.uid()
+    public.sellerbooks_can_access_client_data()
+    and (
+        owner_user_id = (select auth.uid())
+        or public.sellerbooks_is_core_admin()
     )
 );
 
@@ -86,12 +89,10 @@ create policy sellerbooks_finance_orders_insert_own
 on public.sellerbooks_finance_orders
 for insert to authenticated
 with check (
-    owner_user_id = auth.uid()
-    and exists (
-        select 1
-        from public.sellerbooks_stores s
-        where s.id = sellerbooks_finance_orders.store_id
-          and s.owner_user_id = auth.uid()
+    public.sellerbooks_can_access_client_data()
+    and (
+        owner_user_id = (select auth.uid())
+        or public.sellerbooks_is_core_admin()
     )
 );
 
@@ -101,22 +102,19 @@ create policy sellerbooks_finance_orders_update_own
 on public.sellerbooks_finance_orders
 for update to authenticated
 using (
-    owner_user_id = auth.uid()
-    and exists (
-        select 1
-        from public.sellerbooks_stores s
-        where s.id = sellerbooks_finance_orders.store_id
-          and s.owner_user_id = auth.uid()
+    public.sellerbooks_can_access_client_data()
+    and (
+        owner_user_id = (select auth.uid())
+        or public.sellerbooks_is_core_admin()
     )
 )
 with check (
-    owner_user_id = auth.uid()
-    and exists (
-        select 1
-        from public.sellerbooks_stores s
-        where s.id = sellerbooks_finance_orders.store_id
-          and s.owner_user_id = auth.uid()
+    public.sellerbooks_can_access_client_data()
+    and (
+        owner_user_id = (select auth.uid())
+        or public.sellerbooks_is_core_admin()
     )
 );
 
+-- Explicit Data API grants are required for newly-created public tables.
 grant select, insert, update on public.sellerbooks_finance_orders to authenticated;
