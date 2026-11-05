@@ -155,7 +155,7 @@ async function syncTikTokOrdersNowInternal(storeId){
                         String(store.id)
                     );
                     if(affiliate.found===true){
-                        affiliateByOrderId[String(financeOrder.order_id)]={
+                        affiliateByOrderId[String(store.id)+"::"+String(financeOrder.order_id)]={
                             amount:Number(affiliate.amount)||0,
                             found:true,
                             source_mode:affiliate.source_mode
