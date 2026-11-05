@@ -1138,6 +1138,10 @@ if(feePercent < 0 || feePercent > 100){
 
     closeStoreModal();
 
+    if(typeof sellerBooksRefreshReportViewsAfterMasterChange==="function"){
+        sellerBooksRefreshReportViewsAfterMasterChange();
+    }
+
 }
 
 
