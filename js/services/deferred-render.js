@@ -18,3 +18,25 @@ function sellerBooksScheduleDeferredRender(callback){
     },0);
 }
 
+/*
+   MASTER DATA BERUBAH:
+   Segarkan Laporan dan Rincian yang sedang terbuka agar angka langsung
+   memakai Master Produk/Akun Toko terbaru. Tidak mengubah filter,
+   transaksi, snapshot, maupun rumus perhitungan.
+*/
+function sellerBooksRefreshReportViewsAfterMasterChange(){
+    sellerBooksScheduleDeferredRender(function(){
+        const reportsView=document.getElementById("reports");
+        const detailsView=document.getElementById("productAnalysis");
+
+        if(reportsView?.classList.contains("active") &&
+           typeof updateReports==="function"){
+            updateReports();
+        }
+
+        if(detailsView?.classList.contains("active") &&
+           typeof renderProductAnalysis==="function"){
+            renderProductAnalysis();
+        }
+    });
+}
