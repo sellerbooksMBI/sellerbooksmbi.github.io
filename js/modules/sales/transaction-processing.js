@@ -850,6 +850,9 @@ function saveSalesImportData(){
         return Number.isFinite(parsed)?Math.floor(parsed/1000):0;
     };
 
+    const affiliateOrderSeen = new Set();
+    const affiliateByOrderId = currentSalesImport.affiliateByOrderId || {};
+
     let transactions =
         rows.map(function(row,rowIndex){
 
@@ -914,6 +917,27 @@ function saveSalesImportData(){
                 masterProductAtImport
                     ? (Number(masterProductAtImport.cost) || 0)
                     : 0;
+
+            const transactionOrderId =
+                currentSalesImport.marketplace === "Shopee"
+                    ? (
+                        String(getFirstValue(row,currentSalesImport.headers,["no. pesanan"]) || "").trim() ||
+                        String(getFirstValue(row,currentSalesImport.headers,["booking sn"]) || "").trim()
+                    )
+                    : (
+                        rule
+                            ? String(getFirstValue(row,currentSalesImport.headers,rule.orderAliases) || "").trim()
+                            : ""
+                    );
+
+            let affiliateCommissionAmount = 0;
+            const affiliateRecord = transactionOrderId
+                ? affiliateByOrderId[String(transactionOrderId)]
+                : null;
+            if(affiliateRecord && affiliateRecord.found === true && !affiliateOrderSeen.has(String(transactionOrderId))){
+                affiliateCommissionAmount = Math.max(0,Number(affiliateRecord.amount)||0);
+                affiliateOrderSeen.add(String(transactionOrderId));
+            }
 
             return {
 
@@ -985,33 +1009,10 @@ function saveSalesImportData(){
                         : 0,
 
                 orderId:
-                    currentSalesImport.marketplace === "Shopee"
-                        ? (
-                            String(
-                                getFirstValue(
-                                    row,
-                                    currentSalesImport.headers,
-                                    ["no. pesanan"]
-                                ) || ""
-                            ).trim()
-                            ||
-                            String(
-                                getFirstValue(
-                                    row,
-                                    currentSalesImport.headers,
-                                    ["booking sn"]
-                                ) || ""
-                            ).trim()
-                        )
-                        : (
-                            rule
-                                ? getFirstValue(
-                                    row,
-                                    currentSalesImport.headers,
-                                    rule.orderAliases
-                                )
-                                : ""
-                        ),
+                    transactionOrderId,
+
+                affiliateCommissionAmount:
+                    affiliateCommissionAmount,
 
                 packingId:
                     packingIndex >= 0
