@@ -119,11 +119,26 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
     order_processing: feeRowsFor("fee_tax_breakdown.fee.transaction_fee_amount"),
     pph22: feeRowsFor("fee_tax_breakdown.tax.article_22_income_tax_withheld"),
   };
+  const infrastructureFee = feeRowsFor("fee_tax_breakdown.fee.vn_fix_infrastructure_fee");
   const logisticsOrder = sumExactPath(orderRows, "shipping_cost_breakdown.logistics_service_fee");
   const logisticsSku = sumExactPath(skuRows, "shipping_cost_breakdown.logistics_service_fee");
   const logistics = logisticsOrder.found ? logisticsOrder : logisticsSku;
-  const six = Object.values(fields);
+  const seven = Object.values(fields);
   const currency = data?.currency ?? orderRows[0]?.currency ?? skuRows[0]?.currency ?? null;
+  const sevenComponentAmount = seven.reduce((sum, item) => sum + item.amount, 0) + logistics.amount;
+  const reportedFeeTaxAmount = sourceMode === "UNSETTLED_ESTIMATE"
+    ? normalizeAmount(data?.est_fee_tax_amount)
+    : normalizeAmount(data?.fee_tax_amount);
+  const reportedFeeTaxFound = sourceMode === "UNSETTLED_ESTIMATE"
+    ? data?.est_fee_tax_amount !== undefined && data?.est_fee_tax_amount !== null
+    : data?.fee_tax_amount !== undefined && data?.fee_tax_amount !== null;
+  const mappedBreakdownAmount = sevenComponentAmount + infrastructureFee.amount;
+  const missingSeven = [
+    ...Object.entries(fields).filter(([, value]) => !value.found).map(([key]) => key),
+    ...(!logistics.found ? ["seller_borne_logistics"] : []),
+  ];
+  const sourceUnavailable = sourceMode === "UNSETTLED_ESTIMATE" && !fields.pph22.found
+    ? ["pph_22"] : [];
   return {
     source_mode: sourceMode, currency,
     components: {
@@ -132,16 +147,34 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
       order_processing_fee: fields.order_processing, pph_22: fields.pph22,
       seller_borne_logistics: { ...logistics, verified_field: "shipping_cost_breakdown.logistics_service_fee",
         description: "TikTok documents this as a per-order seller logistics service fee.", included_in_total: logistics.found },
+      infrastructure_fee_additional: { ...infrastructureFee,
+        verified_field: "fee_tax_breakdown.fee.vn_fix_infrastructure_fee",
+        description: "TikTok infrastructure fee on the main order; reported separately from the requested seven components." },
     },
-    admin_marketplace_total: { amount: six.reduce((sum, item) => sum + item.amount, 0) + logistics.amount,
-      currency, complete: six.every((item) => item.found) && logistics.found,
-      note: "Seven-component total. Missing fields remain unconfirmed; '-' and numeric zero are zero." },
+    admin_marketplace_total: { amount: sevenComponentAmount, currency,
+      complete: missingSeven.length === 0,
+      missing_components: missingSeven,
+      source_unavailable_components: sourceUnavailable,
+      note: "Requested seven-component subtotal only. Additional infrastructure fee is reported separately; missing fields are not treated as confirmed zero." },
+    reconciliation: {
+      reported_fee_tax_amount: reportedFeeTaxFound ? reportedFeeTaxAmount : null,
+      seven_component_amount: sevenComponentAmount,
+      additional_infrastructure_fee: infrastructureFee.found ? infrastructureFee.amount : null,
+      mapped_breakdown_amount: infrastructureFee.found ? mappedBreakdownAmount : null,
+      unmapped_difference: reportedFeeTaxFound && infrastructureFee.found
+        ? reportedFeeTaxAmount - mappedBreakdownAmount : null,
+      reconciled: reportedFeeTaxFound && infrastructureFee.found &&
+        Math.abs(reportedFeeTaxAmount - mappedBreakdownAmount) < 0.000001,
+      note: "Reconciliation compares the API aggregate against the seven requested components plus the separately identified infrastructure fee. A non-zero difference remains unclassified; never allocate it by assumption.",
+    },
     sku_transaction_count: skuRows.length, order_transaction_count: orderRows.length,
-    readiness: six.every((item) => item.found) && logistics.found ? "SEVEN_COMPONENTS_PRESENT" : "INCOMPLETE_COMPONENT_MAPPING",
+    readiness: missingSeven.length === 0 ? "SEVEN_COMPONENTS_PRESENT" :
+      sourceUnavailable.length ? "SOURCE_FIELD_UNAVAILABLE" : "INCOMPLETE_COMPONENT_MAPPING",
     warnings: ["Exact documented paths only; SKU rows take precedence over order rows to prevent duplicate aggregation.",
       "Logistics uses the documented order-level shipping_cost_breakdown.logistics_service_fee.",
-      "Affiliate aggregate only; affiliate subcomponents are not added again.",
-      sourceMode === "UNSETTLED_ESTIMATE" ? "Unsettled values are estimates and may change before settlement." : "Settled values are final statement values."],
+      "Affiliate aggregate only; affiliate subcomponents such as affiliate_commission_before_pit_amount are not added again.",
+      "vn_fix_infrastructure_fee is tracked separately and is not silently merged into the seven requested components.",
+      sourceMode === "UNSETTLED_ESTIMATE" ? "Unsettled values are estimates and may change before settlement; Article 22 tax may not be returned by this endpoint." : "Settled values are final statement values."],
   };
 };
 Deno.serve(async (req: Request) => {
@@ -262,7 +295,9 @@ Deno.serve(async (req: Request) => {
         : "SETTLEMENT_DATA_NOT_AVAILABLE",
       settled_lookup: settled
         ? {
-          found: Boolean(settledData),
+          found: settledTransactions.length > 0 || settledSkuTransactions.length > 0,
+          status: settledTransactions.length > 0 || settledSkuTransactions.length > 0
+            ? "SETTLED_TRANSACTION_ROWS_FOUND" : "SETTLED_RESPONSE_WITHOUT_TRANSACTION_ROWS",
           data: settledData,
           transaction_count: settledTransactions.length,
           sku_transaction_count: settledSkuTransactions.length,
