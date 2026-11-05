@@ -55,11 +55,21 @@ window.sellerBooksAuditTikTokOrder = async function(orderId, orderCreateTime, st
 
     const settled=result.settled_lookup?.fee_component_audit;
     const unsettled=result.unsettled_lookup?.fee_component_audit;
-    const audit=settled || unsettled;
+    const settledHasRows=Boolean(result.settled_lookup?.found);
+    const unsettledFound=Boolean(result.unsettled_lookup?.found);
+    const audit=settledHasRows ? settled : (unsettledFound ? unsettled : settled);
     const complete=Boolean(audit?.admin_marketplace_total?.complete);
+    const reconciliation=audit?.reconciliation;
     const message=complete
-        ? "Audit Finance TikTok selesai. Tujuh komponen ditemukan. Buka Console browser untuk melihat rincian."
-        : "Audit Finance TikTok berhasil dipanggil, tetapi data komponen belum lengkap. Buka Console browser untuk melihat hasil dan error.";
+        ? (audit?.source_mode==="UNSETTLED_ESTIMATE"
+            ? "Rincian tujuh komponen ditemukan pada data estimasi unsettled. Nilai masih dapat berubah setelah settlement."
+            : "Audit Finance TikTok selesai. Tujuh komponen ditemukan pada data settled.")
+        : (unsettledFound
+            ? "Data estimasi unsettled ditemukan. Ada komponen yang belum tersedia pada sumber ini; lihat rincian dan selisih rekonsiliasi di Console."
+            : "Respons settled diterima tetapi belum memiliki baris transaksi. Periksa hasil audit di Console.");
+    console.info("TikTok Finance audit selected source:", audit?.source_mode || "NONE",
+        "seven-component amount:", audit?.admin_marketplace_total?.amount,
+        "reconciliation:", reconciliation || "not available");
     if(typeof sellerBooksAlert==="function"){
         sellerBooksAlert(message,"Audit Finance TikTok");
     }
