@@ -104,8 +104,29 @@ const sumExactPath = (rows: any[], path: string): AmountValue => {
   return { found: matches.length > 0, amount: matches.reduce((sum, item) => sum + normalizeAmount(item.value), 0),
     occurrences: matches.length, paths: matches.map((item) => item.path) };
 };
+const discoverFeeTaxFields = (rows: any[]) => {
+  const found: Record<string, { amount: number; occurrences: number; paths: string[] }> = {};
+  const visit = (value: any, path: string, rowIndex: number, depth: number) => {
+    if (!value || typeof value !== "object" || depth > 5) return;
+    for (const [key, child] of Object.entries(value)) {
+      const next = path ? path + "." + key : key;
+      if (typeof child === "string" || typeof child === "number") {
+        if (/(fee|commission|tax|vat|gst|pit|withheld|duty|surcharge|charge|handling|insurance|infrastructure|service)/i.test(key)) {
+          const item = found[next] || (found[next] = { amount: 0, occurrences: 0, paths: [] });
+          item.amount += normalizeAmount(child);
+          item.occurrences += 1;
+          item.paths.push("[" + rowIndex + "]." + next);
+        }
+      } else if (child && typeof child === "object") visit(child, next, rowIndex, depth + 1);
+    }
+  };
+  rows.forEach((row, index) => visit(row?.fee_tax_breakdown, "fee_tax_breakdown", index, 0));
+  rows.forEach((row, index) => visit(row?.shipping_cost_breakdown, "shipping_cost_breakdown", index, 0));
+  return found;
+};
 const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETTLED_FINAL") => {
-  const orderRows = Array.isArray(data?.transactions) ? data.transactions : [];
+  const orderRows = Array.isArray(data?.transactions) ? data.transactions :
+    (sourceMode === "UNSETTLED_ESTIMATE" && data?.order_id ? [data] : []);
   const skuRows = Array.isArray(data?.sku_transactions) ? data.sku_transactions : [];
   const feeRowsFor = (path: string) => {
     const skuValue = sumExactPath(skuRows, path);
@@ -127,11 +148,13 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
   const currency = data?.currency ?? orderRows[0]?.currency ?? skuRows[0]?.currency ?? null;
   const sevenComponentAmount = seven.reduce((sum, item) => sum + item.amount, 0) + logistics.amount;
   const reportedFeeTaxAmount = sourceMode === "UNSETTLED_ESTIMATE"
-    ? normalizeAmount(data?.est_fee_tax_amount)
-    : normalizeAmount(data?.fee_tax_amount);
+    ? normalizeAmount(data?.est_fee_tax_amount ?? orderRows[0]?.est_fee_tax_amount)
+    : normalizeAmount(data?.fee_and_tax_amount ?? data?.fee_tax_amount ??
+        orderRows[0]?.fee_tax_amount ?? skuRows[0]?.fee_tax_amount);
   const reportedFeeTaxFound = sourceMode === "UNSETTLED_ESTIMATE"
-    ? data?.est_fee_tax_amount !== undefined && data?.est_fee_tax_amount !== null
-    : data?.fee_tax_amount !== undefined && data?.fee_tax_amount !== null;
+    ? (data?.est_fee_tax_amount ?? orderRows[0]?.est_fee_tax_amount) != null
+    : (data?.fee_and_tax_amount ?? data?.fee_tax_amount ??
+        orderRows[0]?.fee_tax_amount ?? skuRows[0]?.fee_tax_amount) != null;
   const mappedBreakdownAmount = sevenComponentAmount + infrastructureFee.amount;
   const missingSeven = [
     ...Object.entries(fields).filter(([, value]) => !value.found).map(([key]) => key),
@@ -141,21 +164,23 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
     ? ["pph_22"] : [];
   return {
     source_mode: sourceMode, currency,
+    reported_aggregate_source: sourceMode === "UNSETTLED_ESTIMATE" ? "est_fee_tax_amount" :
+      (data?.fee_and_tax_amount != null ? "fee_and_tax_amount" : "fee_tax_amount"),
     components: {
       platform_commission: fields.platform_commission, mall_service_fee: fields.mall_service,
       affiliate_commission: fields.affiliate, dynamic_commission: fields.dynamic_commission,
       order_processing_fee: fields.order_processing, pph_22: fields.pph22,
       seller_borne_logistics: { ...logistics, verified_field: "shipping_cost_breakdown.logistics_service_fee",
-        description: "TikTok documents this as a per-order seller logistics service fee.", included_in_total: logistics.found },
+        description: "TikTok per-order seller logistics service fee.", included_in_total: logistics.found },
       infrastructure_fee_additional: { ...infrastructureFee,
         verified_field: "fee_tax_breakdown.fee.vn_fix_infrastructure_fee",
-        description: "TikTok infrastructure fee on the main order; reported separately from the requested seven components." },
+        description: "TikTok infrastructure fee tracked separately from the seven requested components." },
     },
+    discovered_fee_tax_fields: discoverFeeTaxFields([...skuRows, ...orderRows]),
     admin_marketplace_total: { amount: sevenComponentAmount, currency,
-      complete: missingSeven.length === 0,
-      missing_components: missingSeven,
+      complete: missingSeven.length === 0, missing_components: missingSeven,
       source_unavailable_components: sourceUnavailable,
-      note: "Requested seven-component subtotal only. Additional infrastructure fee is reported separately; missing fields are not treated as confirmed zero." },
+      note: "Seven requested components only; additional infrastructure fee is separate; absent fields are not assumed zero." },
     reconciliation: {
       reported_fee_tax_amount: reportedFeeTaxFound ? reportedFeeTaxAmount : null,
       seven_component_amount: sevenComponentAmount,
@@ -165,16 +190,15 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
         ? reportedFeeTaxAmount - mappedBreakdownAmount : null,
       reconciled: reportedFeeTaxFound && infrastructureFee.found &&
         Math.abs(reportedFeeTaxAmount - mappedBreakdownAmount) < 0.000001,
-      note: "Reconciliation compares the API aggregate against the seven requested components plus the separately identified infrastructure fee. A non-zero difference remains unclassified; never allocate it by assumption.",
+      note: "Unmapped differences are not allocated by assumption.",
     },
     sku_transaction_count: skuRows.length, order_transaction_count: orderRows.length,
     readiness: missingSeven.length === 0 ? "SEVEN_COMPONENTS_PRESENT" :
       sourceUnavailable.length ? "SOURCE_FIELD_UNAVAILABLE" : "INCOMPLETE_COMPONENT_MAPPING",
-    warnings: ["Exact documented paths only; SKU rows take precedence over order rows to prevent duplicate aggregation.",
-      "Logistics uses the documented order-level shipping_cost_breakdown.logistics_service_fee.",
-      "Affiliate aggregate only; affiliate subcomponents such as affiliate_commission_before_pit_amount are not added again.",
-      "vn_fix_infrastructure_fee is tracked separately and is not silently merged into the seven requested components.",
-      sourceMode === "UNSETTLED_ESTIMATE" ? "Unsettled values are estimates and may change before settlement; Article 22 tax may not be returned by this endpoint." : "Settled values are final statement values."],
+    warnings: ["Exact requested fields are mapped separately; all discovered fee/tax fields are exposed for review.",
+      "SKU rows take precedence over order rows to avoid duplicate aggregation.",
+      "Affiliate aggregate only; affiliate subcomponents are not added again.",
+      "Unsettled values are estimates; settled statement values are final."],
   };
 };
 Deno.serve(async (req: Request) => {
@@ -238,7 +262,7 @@ Deno.serve(async (req: Request) => {
       return response({ ok: false, error: "TIKTOK_CREDENTIAL_INCOMPLETE" }, 409);
     }
 
-    // Final, SKU-level settled transaction lookup. This endpoint is documented for all regions.
+    // Final order-level settled lookup.
     let settled: any = null;
     let settledError: string | null = null;
     try {
@@ -250,10 +274,58 @@ Deno.serve(async (req: Request) => {
     } catch (error) {
       settledError = error instanceof Error ? error.message : String(error);
     }
-
     const settledData = settled?.data ?? null;
     const settledTransactions = Array.isArray(settledData?.transactions) ? settledData.transactions : [];
     const settledSkuTransactions = Array.isArray(settledData?.sku_transactions) ? settledData.sku_transactions : [];
+
+    // Search daily statements since the order was created; fetch statement rows and match the exact order ID.
+    const orderCreateTimeForStatements = Number(body.order_create_time || 0);
+    const statementLookup: any = { attempted: false, found: false, statements_checked: 0,
+      matched_statement_id: null, transaction_count: 0, matching_transactions: [], error: null,
+      note: "Read-only statement search. Statement API returns settled records only." };
+    if (orderCreateTimeForStatements > 0) {
+      statementLookup.attempted = true;
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        const from = Math.max(1688169600, orderCreateTimeForStatements - 86400);
+        const to = now + 1;
+        const list = await tiktokGet(credential, "/finance/202309/statements", {
+          statement_time_ge: String(from), statement_time_lt: String(to),
+          sort_field: "statement_time", sort_order: "ASC", page_size: "100",
+        });
+        const statements = Array.isArray(list?.data?.statements) ? list.data.statements : [];
+        statementLookup.total_statements_returned = statements.length;
+        statementLookup.list_request_id = list?.request_id ?? null;
+        for (const statement of statements.slice(0, 45)) {
+          const statementId = String(statement?.id || "");
+          if (!statementId) continue;
+          statementLookup.statements_checked++;
+          const detail = await tiktokGet(credential,
+            "/finance/202501/statements/" + encodeURIComponent(statementId) + "/statement_transactions",
+            { sort_field: "order_create_time", sort_order: "ASC", page_size: "100" });
+          const rows = Array.isArray(detail?.data?.transactions) ? detail.data.transactions : [];
+          const matches = rows.filter((row: any) =>
+            String(row?.order_id || row?.adjustment_order_id || "") === orderId);
+          if (matches.length) {
+            statementLookup.found = true;
+            statementLookup.matched_statement_id = statementId;
+            statementLookup.transaction_count += matches.length;
+            statementLookup.matching_transactions.push(...matches);
+            statementLookup.statement_summary = statement;
+            statementLookup.statement_aggregate = detail?.data?.total_settlement_breakdown ??
+              detail?.data?.total_fee_tax_amount ?? null;
+            break;
+          }
+          const nextToken = String(detail?.data?.next_page_token || "");
+          if (nextToken) statementLookup.pagination_available = true;
+        }
+        if (statements.length > 45) statementLookup.truncated = true;
+      } catch (error) {
+        statementLookup.error = error instanceof Error ? error.message : String(error);
+      }
+    } else {
+      statementLookup.error = "ORDER_CREATE_TIME_REQUIRED_FOR_STATEMENT_LOOKUP";
+    }
 
     // Unsettled estimates are queried separately using TikTok's order creation-time window.
     const orderCreateTime = Number(body.order_create_time || 0);
@@ -293,6 +365,7 @@ Deno.serve(async (req: Request) => {
       settlement_status: settled
         ? "SETTLEMENT_DATA_RETURNED"
         : "SETTLEMENT_DATA_NOT_AVAILABLE",
+      statement_lookup: statementLookup,
       settled_lookup: settled
         ? {
           found: settledTransactions.length > 0 || settledSkuTransactions.length > 0,
@@ -302,12 +375,15 @@ Deno.serve(async (req: Request) => {
           transaction_count: settledTransactions.length,
           sku_transaction_count: settledSkuTransactions.length,
           request_id: settled.request_id ?? null,
-          fee_component_audit: buildTikTokFeeAudit(settledData, "SETTLED_FINAL"),
+          fee_component_audit: buildTikTokFeeAudit({
+            ...settledData,
+            fee_and_tax_amount: settledData?.fee_and_tax_amount ?? settledData?.data?.fee_and_tax_amount,
+          }, "SETTLED_FINAL"),
         }
         : { found: false, error: settledError },
       unsettled_lookup: unsettledMatch
         ? { found: true, transaction: unsettledMatch,
-            fee_component_audit: buildTikTokFeeAudit({ transactions: [unsettledMatch] }, "UNSETTLED_ESTIMATE") }
+            fee_component_audit: buildTikTokFeeAudit(unsettledMatch, "UNSETTLED_ESTIMATE") }
         : { found: false, error: unsettledError },
       note: "Read-only seven-component audit for settled and unsettled TikTok orders. No sales, import queue, HPP, profit, refund, or snapshot data is modified.",
     });
