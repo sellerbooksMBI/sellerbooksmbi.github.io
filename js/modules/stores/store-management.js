@@ -607,6 +607,21 @@ function renderStores(skipIntegrationRefresh){
         else if(isBlibliStore){
             orderSyncButtonHtml = '<div class="store-action-order-row"><button type="button" class="store-action-button store-integrate-button" onclick="syncBlibliOrdersNow(\''+store.id+'\')" title="Tarik Order Blibli">🔄 '+sellerBooksStoreText("syncOrders")+'</button></div>';
         }
+        const financeAuditButtonHtml = isTikTokStore && isIntegrated
+            ? `
+                <div class="store-action-order-row">
+                    <button
+                        type="button"
+                        class="store-action-button store-finance-audit-button"
+                        onclick="openTikTokFinanceAudit('${store.id}')"
+                        title="${sellerBooksCurrentLanguage() === "en" ? "Audit TikTok Finance" : "Uji rincian biaya TikTok"}"
+                    >
+                        🧾 ${sellerBooksCurrentLanguage() === "en" ? "Finance Audit" : "Uji Finance"}
+                    </button>
+                </div>
+              `
+            : "";
+
         const integrationButtonHtml = isIntegrated
             ? `
                 <button
@@ -617,6 +632,7 @@ function renderStores(skipIntegrationRefresh){
                     ⛓ ${sellerBooksStoreText("disconnectIntegration")}
                 </button>
                 ${orderSyncButtonHtml}
+                ${financeAuditButtonHtml}
               `
             : `
                 <button
