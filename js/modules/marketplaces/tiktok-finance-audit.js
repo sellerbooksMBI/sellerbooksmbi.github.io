@@ -58,6 +58,20 @@ window.sellerBooksAuditTikTokOrder = async function(orderId, orderCreateTime, st
     const settledHasRows=Boolean(result.settled_lookup?.found);
     const unsettledFound=Boolean(result.unsettled_lookup?.found);
     const audit=settledHasRows ? settled : (unsettledFound ? unsettled : settled);
+    let financePersistence={saved:false,reason:"PERSISTENCE_NOT_AVAILABLE"};
+    if(audit && typeof window.sellerBooksPersistFinanceAudit==="function"){
+        try{
+            financePersistence=await window.sellerBooksPersistFinanceAudit({
+                storeId:String(store.id),
+                marketplaceId:String(store.marketplaceId||"tiktok_shop"),
+                orderId:order,
+                result:result
+            });
+        }catch(persistError){
+            financePersistence={saved:false,error:String(persistError?.message||persistError)};
+            console.error("Finance audit berhasil dibaca tetapi belum tersimpan:",persistError);
+        }
+    }
     const complete=Boolean(audit?.admin_marketplace_total?.complete);
     const reconciliation=audit?.reconciliation;
     const message=complete
@@ -71,7 +85,10 @@ window.sellerBooksAuditTikTokOrder = async function(orderId, orderCreateTime, st
         "seven-component amount:", audit?.admin_marketplace_total?.amount,
         "reconciliation:", reconciliation || "not available");
     if(typeof sellerBooksAlert==="function"){
-        sellerBooksAlert(message,"Audit Finance TikTok");
+        const persistenceMessage=financePersistence.saved
+            ? " Data Finance tersimpan ke cloud."
+            : " Data audit belum tersimpan ke cloud: "+String(financePersistence.error||financePersistence.reason||"modul penyimpanan belum tersedia")+".";
+        sellerBooksAlert(message+persistenceMessage,"Audit Finance TikTok");
     }
     return result;
 }
