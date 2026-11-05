@@ -218,6 +218,10 @@ Deno.serve(async (req: Request) => {
       settledError = error instanceof Error ? error.message : String(error);
     }
 
+    const settledData = settled?.data ?? null;
+    const settledTransactions = Array.isArray(settledData?.transactions) ? settledData.transactions : [];
+    const settledSkuTransactions = Array.isArray(settledData?.sku_transactions) ? settledData.sku_transactions : [];
+
     // Unsettled estimates are queried separately using TikTok's order creation-time window.
     const orderCreateTime = Number(body.order_create_time || 0);
     let unsettledMatch: any = null;
