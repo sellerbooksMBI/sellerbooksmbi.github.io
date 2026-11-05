@@ -176,6 +176,11 @@ async function sellerBooksDispatchExcelQueue(opts){
         */
         sellerBooksExcelDispatchRerunRequested=true;
         if(opts.showResult)sellerBooksExcelDispatchRerunShowResult=true;
+        window.__sellerBooksAffiliateDispatchRerunMap=Object.assign(
+            {},
+            window.__sellerBooksAffiliateDispatchRerunMap||{},
+            opts.affiliateByOrderId||{}
+        );
         return;
     }
     sellerBooksExcelDispatchRunning=true;
@@ -217,10 +222,12 @@ async function sellerBooksDispatchExcelQueue(opts){
         sellerBooksExcelDispatchRunning=false;
         if(sellerBooksExcelDispatchRerunRequested){
             const showResult=sellerBooksExcelDispatchRerunShowResult;
+            const affiliateByOrderId=window.__sellerBooksAffiliateDispatchRerunMap||{};
+            window.__sellerBooksAffiliateDispatchRerunMap={};
             sellerBooksExcelDispatchRerunRequested=false;
             sellerBooksExcelDispatchRerunShowResult=false;
             setTimeout(function(){
-                sellerBooksDispatchExcelQueue({showResult:showResult}).catch(console.error);
+                sellerBooksDispatchExcelQueue({showResult:showResult,affiliateByOrderId:affiliateByOrderId}).catch(console.error);
             },0);
         }
     }
