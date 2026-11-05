@@ -144,21 +144,33 @@ async function syncTikTokOrdersNowInternal(storeId){
         }
 
         if(result.status==="RAW_FILE_READY"){
-            await sellerBooksDispatchExcelQueue({showResult:true});
+            const affiliateByOrderId={};
             const financeOrders=Array.isArray(result.finance_orders)?result.finance_orders:[];
             for(const financeOrder of financeOrders){
-                if(typeof window.sellerBooksAuditTikTokOrder!=="function")break;
+                if(typeof window.sellerBooksFetchTikTokAffiliate!=="function")break;
                 try{
-                    await window.sellerBooksAuditTikTokOrder(
+                    const affiliate=await window.sellerBooksFetchTikTokAffiliate(
                         financeOrder.order_id,
                         financeOrder.order_create_time,
-                        String(store.id),
-                        {silent:true}
+                        String(store.id)
                     );
+                    if(affiliate.found===true){
+                        affiliateByOrderId[String(financeOrder.order_id)]={
+                            amount:Number(affiliate.amount)||0,
+                            found:true,
+                            source_mode:affiliate.source_mode
+                        };
+                    }else{
+                        console.warn("Affiliate TikTok belum tersedia untuk order "+financeOrder.order_id+"; admin lama tetap digunakan.");
+                    }
                 }catch(financeError){
-                    console.warn("Finance TikTok belum berhasil disinkronkan untuk order "+financeOrder.order_id+":",financeError);
+                    console.warn("Pengambilan Affiliate TikTok gagal untuk order "+financeOrder.order_id+"; admin lama tetap digunakan:",financeError);
                 }
             }
+            await sellerBooksDispatchExcelQueue({
+                showResult:true,
+                affiliateByOrderId:affiliateByOrderId
+            });
             return;
         }
 

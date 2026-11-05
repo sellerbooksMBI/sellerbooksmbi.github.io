@@ -2274,7 +2274,7 @@ function getReportTransactionPrice(transaction){
     return product ? (Number(product.price) || 0) : 0;
 }
 
-function getReportTransactionFeePercent(transaction){
+function getReportTransactionBaseFeePercent(transaction){
 
     /*
        SNAPSHOT HARIAN — ADMIN FEE
@@ -2497,6 +2497,16 @@ function getReportTransactionFeePercent(transaction){
 /* =========================================================
    HITUNG PACKING DARI TRANSAKSI
 ========================================================= */
+
+
+/* Affiliate is an order-level fixed amount, added once to the existing SKU/store admin fee. */
+function getReportTransactionFeePercent(transaction){
+    const basePercent=getReportTransactionBaseFeePercent(transaction);
+    const affiliateAmount=Math.max(0,Number(transaction && transaction.affiliateCommissionAmount)||0);
+    if(affiliateAmount<=0) return basePercent;
+    const salesAmount=getReportTransactionSalesAmount(transaction);
+    return salesAmount>0 ? basePercent+(affiliateAmount/salesAmount*100) : basePercent;
+}
 
 function calculateReportPacking(transactions){
 

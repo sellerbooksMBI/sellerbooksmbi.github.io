@@ -30,7 +30,7 @@ function sellerBooksApiImportProfile(marketplace){
     return profiles[key]||null;
 }
 
-async function sellerBooksDispatchExcelToImportPenjualan(queueItem,showResult){
+async function sellerBooksDispatchExcelToImportPenjualan(queueItem,showResult,affiliateByOrderId){
     if(!queueItem) return null;
     const marketplaceName=String(queueItem.marketplace||"").trim();
     const profile=sellerBooksApiImportProfile(marketplaceName);
@@ -76,7 +76,8 @@ async function sellerBooksDispatchExcelToImportPenjualan(queueItem,showResult){
         priceColumn:profile.price,
         priceIndex:headers.indexOf(profile.price),
         columnsConfirmed:true,
-        confirmedAt:new Date().toISOString()
+        confirmedAt:new Date().toISOString(),
+        affiliateByOrderId:affiliateByOrderId && typeof affiliateByOrderId==="object" ? affiliateByOrderId : {}
     };
 
     const storeSelect=document.getElementById("salesStoreAccount");
@@ -175,6 +176,11 @@ async function sellerBooksDispatchExcelQueue(opts){
         */
         sellerBooksExcelDispatchRerunRequested=true;
         if(opts.showResult)sellerBooksExcelDispatchRerunShowResult=true;
+        window.__sellerBooksAffiliateDispatchRerunMap=Object.assign(
+            {},
+            window.__sellerBooksAffiliateDispatchRerunMap||{},
+            opts.affiliateByOrderId||{}
+        );
         return;
     }
     sellerBooksExcelDispatchRunning=true;
@@ -195,7 +201,7 @@ async function sellerBooksDispatchExcelQueue(opts){
             const claimed=await claim.json();
             if(!Array.isArray(claimed)||!claimed[0])continue;
             try{
-                const result=await sellerBooksDispatchExcelToImportPenjualan(claimed[0],!!opts.showResult);
+                const result=await sellerBooksDispatchExcelToImportPenjualan(claimed[0],!!opts.showResult,opts.affiliateByOrderId||{});
                 if(result?.retry){
                     await sellerBooksQueueRequest("sellerbooks_api_import_queue?id=eq."+encodeURIComponent(item.id),{
                         method:"PATCH",headers:{"Prefer":"return=minimal"},
@@ -216,10 +222,12 @@ async function sellerBooksDispatchExcelQueue(opts){
         sellerBooksExcelDispatchRunning=false;
         if(sellerBooksExcelDispatchRerunRequested){
             const showResult=sellerBooksExcelDispatchRerunShowResult;
+            const affiliateByOrderId=window.__sellerBooksAffiliateDispatchRerunMap||{};
+            window.__sellerBooksAffiliateDispatchRerunMap={};
             sellerBooksExcelDispatchRerunRequested=false;
             sellerBooksExcelDispatchRerunShowResult=false;
             setTimeout(function(){
-                sellerBooksDispatchExcelQueue({showResult:showResult}).catch(console.error);
+                sellerBooksDispatchExcelQueue({showResult:showResult,affiliateByOrderId:affiliateByOrderId}).catch(console.error);
             },0);
         }
     }
