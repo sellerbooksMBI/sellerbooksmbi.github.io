@@ -1,8 +1,10 @@
 # SellerBooks Finance storage and sync path
 
-## Scope of this branch
+## Scope
 
-This branch introduces an isolated, order-level Finance persistence layer for TikTok Shop's seven mapped components. It does not change sales imports, HPP, refunds, packing, daily snapshots, the legacy Admin % SKU field, or the legacy Store fee-percent field.
+The seven-component Finance storage foundation is integrated into SellerBooksMBI `main`. The legacy SellerBooks production repository and database are not modified.
+
+The first connected source is TikTok Shop's Finance audit. The storage schema is order-level and marketplace-aware so later marketplace adapters can use the same persistence model. It does not change sales imports, HPP, refunds, packing, daily snapshots, report calculations, the legacy Admin % SKU field, or the legacy Store fee-percent field.
 
 ## Data path
 
@@ -10,7 +12,7 @@ This branch introduces an isolated, order-level Finance persistence layer for Ti
 2. `js/modules/marketplaces/finance-storage.js` selects settled data when settled rows exist; otherwise it selects the unsettled estimate.
 3. The selected audit is persisted in `sellerbooks_finance_orders`, keyed by owner, store, marketplace and Order ID.
 4. The database trigger prevents an unsettled estimate from downgrading a settled record and prevents an incomplete settled response from replacing a complete settled record.
-5. Report integration is deliberately a separate stage. Reports must read complete Finance records and allocate order-level fees across SKU rows without duplicating order fees.
+5. Report integration remains a separate stage. Reports must read complete Finance records and allocate order-level fees across SKU rows without duplicating order fees.
 
 ## Seven component keys
 
@@ -22,19 +24,25 @@ This branch introduces an isolated, order-level Finance persistence layer for Ti
 - `pph_22`
 - `seller_borne_logistics`
 
-The raw audit keeps each amount's source paths and reconciliation metadata. Missing components remain missing; they are never silently treated as zero.
+The audit keeps each amount's source paths and reconciliation metadata. Missing components remain missing; they are never silently treated as zero.
 
-## Deployment order
+## Database deployment
 
-1. Review and apply `supabase/migrations/20261105090000_sellerbooks_finance_orders.sql` to the SellerBooks Supabase project.
-2. Deploy the frontend branch with the new Finance storage module.
-3. Run Finance audit tests on one unsettled and one settled TikTok order.
-4. Confirm that repeated sync is idempotent and that settled status cannot regress.
-5. Only after verified order-level records exist, implement the report adapter and run old-vs-new profit reconciliation.
-6. Keep Admin % SKU and Store fee-percent fields until all report comparisons pass.
+- `supabase/migrations/20261105101526_sellerbooks_finance_orders.sql` was applied to the SellerBooks-only Supabase project.
+- `supabase/migrations/20261105102000_sellerbooks_finance_store_fk_index.sql` adds the index for the composite store foreign key.
+- The table has RLS enabled, explicit `authenticated` Data API grants, owner/Core Admin policies aligned with SellerBooks approval rules, and a composite foreign key to the matching owner, marketplace and store.
+- No existing sales rows, snapshots, or legacy fee settings were rewritten.
 
-## Not included yet
+## Validation performed
 
-- No report formula is switched to Finance in this branch.
-- No production migration is applied by this change.
-- No existing sales or snapshot rows are rewritten.
+- Confirmed the table exists with RLS enabled and the composite store foreign key.
+- Tested an authenticated owner's insert and read under RLS inside a rolled-back transaction.
+- Tested that an unsettled estimate cannot replace an existing complete settled record inside a rolled-back transaction.
+- Supabase performance advisor no longer reports the Finance store foreign key as unindexed. New-table indexes may still appear as unused until actual Finance records are synced.
+
+## Next steps
+
+1. Run one unsettled and one settled TikTok Shop Finance audit through the SellerBooksMBI UI.
+2. Confirm repeated sync is idempotent and the saved component amounts match the audit response.
+3. Implement the report adapter only after source data is verified; reconcile old-vs-new profit by order and SKU.
+4. Keep Admin % SKU and Store fee-percent fields as fallback until all report comparisons pass. Remove those controls from the UI only after the seven-component model is proven accurate.
