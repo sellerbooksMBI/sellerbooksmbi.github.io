@@ -834,6 +834,22 @@ function saveSalesImportData(){
     const reportDate =
         getIndonesiaDateString(importedAt);
 
+    /* TikTok Finance statement lookup requires the original order creation time. */
+    const parseTikTokOrderCreateTime = function(value){
+        const raw=String(value||"").trim();
+        if(!raw) return 0;
+        const match=raw.match(/^(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{4})(?:\\s+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?)?$/);
+        if(match){
+            const timestamp=Date.UTC(
+                Number(match[3]),Number(match[2])-1,Number(match[1]),
+                Number(match[4]||0),Number(match[5]||0),Number(match[6]||0)
+            );
+            return Math.floor(timestamp/1000);
+        }
+        const parsed=Date.parse(raw);
+        return Number.isFinite(parsed)?Math.floor(parsed/1000):0;
+    };
+
     let transactions =
         rows.map(function(row,rowIndex){
 
@@ -960,6 +976,13 @@ function saveSalesImportData(){
 
                 salesAmount:
                     salesAmount,
+
+                orderCreateTime:
+                    currentSalesImport.marketplace === "TikTok"
+                        ? parseTikTokOrderCreateTime(
+                            getFirstValue(row,currentSalesImport.headers,["created time"])
+                        )
+                        : 0,
 
                 orderId:
                     currentSalesImport.marketplace === "Shopee"
