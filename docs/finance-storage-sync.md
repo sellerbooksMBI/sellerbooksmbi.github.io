@@ -29,7 +29,7 @@ The audit keeps each amount's source paths and reconciliation metadata. Missing 
 ## Database deployment
 
 - `supabase/migrations/20261105101526_sellerbooks_finance_orders.sql` was applied to the SellerBooks-only Supabase project.
-- `supabase/migrations/20261105102000_sellerbooks_finance_store_fk_index.sql` adds the index for the composite store foreign key.
+- `supabase/migrations/20261105101554_sellerbooks_finance_store_fk_index.sql` adds the index for the composite store foreign key.
 - The table has RLS enabled, explicit `authenticated` Data API grants, owner/Core Admin policies aligned with SellerBooks approval rules, and a composite foreign key to the matching owner, marketplace and store.
 - No existing sales rows, snapshots, or legacy fee settings were rewritten.
 
