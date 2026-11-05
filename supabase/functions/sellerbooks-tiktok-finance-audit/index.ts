@@ -132,21 +132,37 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
     const skuValue = sumExactPath(skuRows, path);
     return skuValue.found ? skuValue : sumExactPath(orderRows, path);
   };
+  const affiliatePrimary = feeRowsFor("fee_tax_breakdown.fee.affiliate_commission_amount");
+  const affiliateAds = feeRowsFor("fee_tax_breakdown.fee.affiliate_ads_commission_amount");
+  // TikTok Indonesia may report the Seller Center affiliate-ads charge in
+  // affiliate_ads_commission_amount while affiliate_commission_amount is zero.
+  // Use the ads field as a fallback, never add both representations together.
+  const affiliate = (affiliatePrimary.amount !== 0 || !affiliateAds.found)
+    ? { ...affiliatePrimary, selected_field: "fee_tax_breakdown.fee.affiliate_commission_amount" }
+    : { ...affiliateAds, selected_field: "fee_tax_breakdown.fee.affiliate_ads_commission_amount" };
+  const processingStandard = feeRowsFor("fee_tax_breakdown.fee.transaction_fee_amount");
+  const infrastructureFee = feeRowsFor("fee_tax_breakdown.fee.vn_fix_infrastructure_fee");
+  // In the tested Indonesia transaction, Seller Center's order-processing fee
+  // is supplied by vn_fix_infrastructure_fee; use it only as a fallback.
+  const orderProcessing = (processingStandard.amount !== 0 || !infrastructureFee.found)
+    ? { ...processingStandard, selected_field: "fee_tax_breakdown.fee.transaction_fee_amount" }
+    : { ...infrastructureFee, selected_field: "fee_tax_breakdown.fee.vn_fix_infrastructure_fee" };
   const fields = {
     platform_commission: feeRowsFor("fee_tax_breakdown.fee.platform_commission_amount"),
     mall_service: feeRowsFor("fee_tax_breakdown.fee.mall_service_fee_amount"),
-    affiliate: feeRowsFor("fee_tax_breakdown.fee.affiliate_commission_amount"),
+    affiliate,
     dynamic_commission: feeRowsFor("fee_tax_breakdown.fee.dynamic_commission_amount"),
-    order_processing: feeRowsFor("fee_tax_breakdown.fee.transaction_fee_amount"),
+    order_processing: orderProcessing,
     pph22: feeRowsFor("fee_tax_breakdown.tax.article_22_income_tax_withheld"),
   };
-  const infrastructureFee = feeRowsFor("fee_tax_breakdown.fee.vn_fix_infrastructure_fee");
   const logisticsOrder = sumExactPath(orderRows, "shipping_cost_breakdown.logistics_service_fee");
   const logisticsSku = sumExactPath(skuRows, "shipping_cost_breakdown.logistics_service_fee");
   const logistics = logisticsOrder.found ? logisticsOrder : logisticsSku;
-  const seven = Object.values(fields);
+  const feeTaxComponents = Object.values(fields);
   const currency = data?.currency ?? orderRows[0]?.currency ?? skuRows[0]?.currency ?? null;
-  const sevenComponentAmount = seven.reduce((sum, item) => sum + item.amount, 0) + logistics.amount;
+  // TikTok fee_and_tax_amount excludes shipping; logistics is reconciled separately.
+  const feeTaxComponentAmount = feeTaxComponents.reduce((sum, item) => sum + item.amount, 0);
+  const sevenComponentAmount = feeTaxComponentAmount + logistics.amount;
   const reportedFeeTaxAmount = sourceMode === "UNSETTLED_ESTIMATE"
     ? normalizeAmount(data?.est_fee_tax_amount ?? orderRows[0]?.est_fee_tax_amount)
     : normalizeAmount(data?.fee_and_tax_amount ?? data?.fee_tax_amount ??
@@ -155,7 +171,7 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
     ? (data?.est_fee_tax_amount ?? orderRows[0]?.est_fee_tax_amount) != null
     : (data?.fee_and_tax_amount ?? data?.fee_tax_amount ??
         orderRows[0]?.fee_tax_amount ?? skuRows[0]?.fee_tax_amount) != null;
-  const mappedBreakdownAmount = sevenComponentAmount + infrastructureFee.amount;
+  const mappedBreakdownAmount = feeTaxComponentAmount;
   const missingSeven = [
     ...Object.entries(fields).filter(([, value]) => !value.found).map(([key]) => key),
     ...(!logistics.found ? ["seller_borne_logistics"] : []),
@@ -172,32 +188,36 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
       order_processing_fee: fields.order_processing, pph_22: fields.pph22,
       seller_borne_logistics: { ...logistics, verified_field: "shipping_cost_breakdown.logistics_service_fee",
         description: "TikTok per-order seller logistics service fee.", included_in_total: logistics.found },
-      infrastructure_fee_additional: { ...infrastructureFee,
+      infrastructure_fee_source: { ...infrastructureFee,
         verified_field: "fee_tax_breakdown.fee.vn_fix_infrastructure_fee",
-        description: "TikTok infrastructure fee tracked separately from the seven requested components." },
+        mapped_as_order_processing_fallback: orderProcessing.selected_field === "fee_tax_breakdown.fee.vn_fix_infrastructure_fee",
+        description: "Raw infrastructure field retained for traceability; when transaction_fee_amount is zero or absent, it supplies the Seller Center order-processing component. It is not added a second time." },
     },
     discovered_fee_tax_fields: discoverFeeTaxFields([...skuRows, ...orderRows]),
     admin_marketplace_total: { amount: sevenComponentAmount, currency,
       complete: missingSeven.length === 0, missing_components: missingSeven,
       source_unavailable_components: sourceUnavailable,
-      note: "Seven requested components only; additional infrastructure fee is separate; absent fields are not assumed zero." },
+      note: "Seven Seller Center cost components including logistics; infrastructure fallback is already included in order_processing and is not added twice; absent fields are not assumed zero." },
     reconciliation: {
       reported_fee_tax_amount: reportedFeeTaxFound ? reportedFeeTaxAmount : null,
+      fee_tax_component_amount: feeTaxComponentAmount,
+      logistics_component_amount: logistics.found ? logistics.amount : null,
       seven_component_amount: sevenComponentAmount,
-      additional_infrastructure_fee: infrastructureFee.found ? infrastructureFee.amount : null,
-      mapped_breakdown_amount: infrastructureFee.found ? mappedBreakdownAmount : null,
-      unmapped_difference: reportedFeeTaxFound && infrastructureFee.found
+      mapped_breakdown_amount: mappedBreakdownAmount,
+      unmapped_difference: reportedFeeTaxFound
         ? reportedFeeTaxAmount - mappedBreakdownAmount : null,
-      reconciled: reportedFeeTaxFound && infrastructureFee.found &&
+      reconciled: reportedFeeTaxFound &&
         Math.abs(reportedFeeTaxAmount - mappedBreakdownAmount) < 0.000001,
-      note: "Unmapped differences are not allocated by assumption.",
+      note: "fee_and_tax_amount is reconciled against fee/tax components only; logistics is reported separately and included in the seven-component total. No component is counted twice.",
     },
     sku_transaction_count: skuRows.length, order_transaction_count: orderRows.length,
     readiness: missingSeven.length === 0 ? "SEVEN_COMPONENTS_PRESENT" :
       sourceUnavailable.length ? "SOURCE_FIELD_UNAVAILABLE" : "INCOMPLETE_COMPONENT_MAPPING",
     warnings: ["Exact requested fields are mapped separately; all discovered fee/tax fields are exposed for review.",
       "SKU rows take precedence over order rows to avoid duplicate aggregation.",
-      "Affiliate aggregate only; affiliate subcomponents are not added again.",
+      "Affiliate commission uses affiliate_commission_amount, falling back to affiliate_ads_commission_amount when the primary field is zero or absent; both are never added together.",
+      "Order processing uses transaction_fee_amount, falling back to vn_fix_infrastructure_fee when the primary field is zero or absent; infrastructure is never added twice.",
+      "TikTok fee_and_tax_amount excludes logistics in this reconciliation; logistics is shown separately and included in the seven-component total.",
       "Unsettled values are estimates; settled statement values are final."],
   };
 };
