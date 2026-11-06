@@ -939,7 +939,8 @@ function saveSalesImportData(){
                     || affiliateByOrderId[String(transactionOrderId)])
                 : null;
             if(affiliateRecord && affiliateRecord.found === true && !affiliateOrderSeen.has(String(transactionOrderId))){
-                affiliateCommissionAmount = Math.max(0,Number(affiliateRecord.amount)||0);
+                /* TikTok mengirim fee sebagai angka negatif; ubah menjadi nilai biaya positif agar masuk ke perhitungan laba. */
+                affiliateCommissionAmount = Math.abs(Number(affiliateRecord.amount)||0);
                 affiliateOrderSeen.add(String(transactionOrderId));
             }
 
