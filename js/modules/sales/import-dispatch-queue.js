@@ -122,18 +122,10 @@ async function sellerBooksDispatchExcelToImportPenjualan(queueItem,showResult,af
         body:JSON.stringify({status:"IMPORTED",error_message:null,processed_at:new Date().toISOString()})
     });
 
-    /* Refresh noncritical views after the result dialog is queued. Cloud persistence
-       and the queue status update above remain awaited before success is shown. */
-    setTimeout(function(){
-        try{ if(typeof updateReports==="function") updateReports(); }
-        catch(error){ console.warn("SellerBooks: deferred report refresh failed:",error); }
-        try{ if(typeof renderProducts==="function") renderProducts(); }
-        catch(error){ console.warn("SellerBooks: deferred product refresh failed:",error); }
-        try{ if(typeof renderNotifications==="function") renderNotifications(); }
-        catch(error){ console.warn("SellerBooks: deferred notification refresh failed:",error); }
-        if(typeof loadStores==="function") loadStores();
-        else if(typeof renderStores==="function") renderStores(true);
-    },0);
+    /* Refresh only the currently visible view; avoid expensive hidden renders. */
+    if(typeof sellerBooksRefreshActiveViewAfterSalesImport==="function"){
+        sellerBooksRefreshActiveViewAfterSalesImport();
+    }
 
     if(showResult){
         const en=sellerBooksPullOrderIsEN();
