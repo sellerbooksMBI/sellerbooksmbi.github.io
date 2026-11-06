@@ -1382,6 +1382,9 @@ function saveSalesImportData(){
         "sellerbooks_sales_imports",
         JSON.stringify(imports)
     );
+    if(typeof sellerBooksInvalidateSalesReportCaches === "function"){
+        sellerBooksInvalidateSalesReportCaches();
+    }
 
 
     sellerBooksStorage.setItem(
