@@ -2009,8 +2009,14 @@ function getReportOtherCosts(options){
     }
 
     const period = options.period || document.getElementById("reportPeriod")?.value || "month";
-    const marketplaceId = options.marketplaceId || "all";
-    const storeId = options.storeId || "all";
+    const marketplaceId =
+        options.marketplaceId !== undefined
+            ? options.marketplaceId
+            : (document.getElementById("reportMarketplace")?.value || "all");
+    const storeId =
+        options.storeId !== undefined
+            ? options.storeId
+            : (document.getElementById("reportStore")?.value || "all");
 
     let total = 0;
     costsData.forEach(function(cost){
