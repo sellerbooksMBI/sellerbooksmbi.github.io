@@ -2568,6 +2568,44 @@ function calculateReportPacking(transactions){
    HITUNG KEUANGAN UTAMA
 ========================================================= */
 
+function calculateReportPackingCost(transactions, packingCount){
+    const list = Array.isArray(transactions) ? transactions : [];
+    let imports = [];
+    try{
+        const stored = JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports") || "[]");
+        if(Array.isArray(stored)) imports = stored;
+    }catch(error){}
+
+    const unitByTransaction = new Map();
+    imports.forEach(function(importRecord){
+        const unit = Number(importRecord && importRecord.packingCostPerOrder);
+        if(!Number.isFinite(unit) || unit < 0) return;
+        (Array.isArray(importRecord.transactions) ? importRecord.transactions : []).forEach(function(item){
+            if(typeof sellerBooksGetSalesImportIdentity !== "function") return;
+            const identity = sellerBooksGetSalesImportIdentity(item);
+            if(identity) unitByTransaction.set(identity, unit);
+        });
+    });
+
+    const costByPacking = new Map();
+    list.forEach(function(item){
+        const packingId = String(item.packingId || item.orderId || "").trim();
+        const key = String(item.marketplaceId || "") + "|" + String(item.storeId || "") + "|" + packingId;
+        if(costByPacking.has(key)) return;
+        let unit = NaN;
+        if(typeof sellerBooksGetSalesImportIdentity === "function"){
+            const identity = sellerBooksGetSalesImportIdentity(item);
+            if(identity && unitByTransaction.has(identity)) unit = unitByTransaction.get(identity);
+        }
+        if(!Number.isFinite(unit)) unit = Number(item.packingCostPerOrderSnapshot);
+        if(!Number.isFinite(unit) || unit < 0) unit = Number(getPackingCostPerOrder()) || 0;
+        costByPacking.set(key, unit);
+    });
+    let total = 0;
+    costByPacking.forEach(function(unit){ total += unit; });
+    return total;
+}
+
 function calculateReportFinancial(){
 
     const financialStart =
@@ -2714,13 +2752,13 @@ function calculateReportFinancial(){
         );
 
 
-    const packingUnit =
-        getPackingCostPerOrder();
-
-
+    /*
+       Biaya packing historis mengikuti nilai yang tersimpan
+       pada record Import Penjualan, bukan pengaturan terbaru.
+       Data lama tanpa snapshot tetap memakai fallback biaya aktif.
+    */
     const totalPacking =
-        packingCount *
-        packingUnit;
+        calculateReportPackingCost(transactions, packingCount);
 
 
     /*
