@@ -1061,6 +1061,11 @@ let sellerBooksProductAnalysisRowsCache = {
    This is essential because imports can be mutated in place (push/filter),
    so reference-based caches alone cannot detect the new contents. */
 function sellerBooksInvalidateSalesReportCaches(){
+    sellerBooksPackingUnitLookupCache = {
+        imports:null,
+        unitByTransaction:null,
+        unitByPacking:null
+    };
     sellerBooksSalesImportsCacheSource = null;
     sellerBooksSalesImportsCache = null;
     sellerBooksReportTransactionsCacheImports = null;
@@ -2625,13 +2630,19 @@ function calculateReportPacking(transactions){
    HITUNG KEUANGAN UTAMA
 ========================================================= */
 
-function calculateReportPackingCost(transactions, packingCount){
-    const list = Array.isArray(transactions) ? transactions : [];
-    let imports = [];
-    try{
-        const stored = JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports") || "[]");
-        if(Array.isArray(stored)) imports = stored;
-    }catch(error){}
+let sellerBooksPackingUnitLookupCache = {
+    imports:null,
+    unitByTransaction:null,
+    unitByPacking:null
+};
+
+function sellerBooksGetPackingUnitLookups(){
+    const imports = getSalesImportsData();
+    if(sellerBooksPackingUnitLookupCache.imports === imports &&
+       sellerBooksPackingUnitLookupCache.unitByTransaction &&
+       sellerBooksPackingUnitLookupCache.unitByPacking){
+        return sellerBooksPackingUnitLookupCache;
+    }
 
     const unitByTransaction = new Map();
     const unitByPacking = new Map();
@@ -2650,6 +2661,20 @@ function calculateReportPackingCost(transactions, packingCount){
             unitByPacking.set(marketplaceId + "|" + storeId + "|" + packingId, unit);
         });
     });
+
+    sellerBooksPackingUnitLookupCache = {
+        imports:imports,
+        unitByTransaction:unitByTransaction,
+        unitByPacking:unitByPacking
+    };
+    return sellerBooksPackingUnitLookupCache;
+}
+
+function calculateReportPackingCost(transactions, packingCount){
+    const list = Array.isArray(transactions) ? transactions : [];
+    const lookups = sellerBooksGetPackingUnitLookups();
+    const unitByTransaction = lookups.unitByTransaction;
+    const unitByPacking = lookups.unitByPacking;
 
     const costByPacking = new Map();
     list.forEach(function(item){
