@@ -939,9 +939,10 @@ async function deleteReportsByDateRange(){
         return;
     }
 
+    const deletedImportSet = new Set(deletedImports);
     const remaining =
         imports.filter(function(record){
-            return !deletedImports.includes(record);
+            return !deletedImportSet.has(record);
         });
 
     const fromText = fromValue.split("-").reverse().join("/");
@@ -998,6 +999,7 @@ async function deleteReportsByDateRange(){
         "sellerbooks_sales_imports",
         JSON.stringify(remaining)
     );
+    sellerBooksInvalidateSalesReportCaches();
 
     updateReports();
 
@@ -1054,6 +1056,27 @@ let sellerBooksProductAnalysisRowsCache = {
     key:"",
     rows:null
 };
+
+/* Invalidate every derived view after the underlying import array changes.
+   This is essential because imports can be mutated in place (push/filter),
+   so reference-based caches alone cannot detect the new contents. */
+function sellerBooksInvalidateSalesReportCaches(){
+    sellerBooksSalesImportsCacheSource = null;
+    sellerBooksSalesImportsCache = null;
+    sellerBooksReportTransactionsCacheImports = null;
+    sellerBooksReportTransactionsCache = null;
+    sellerBooksReportFilteredTransactionsCache = {
+        sourceTransactions:null,
+        key:"",
+        transactions:null
+    };
+    sellerBooksProductAnalysisRowsCache = {
+        sourceTransactions:null,
+        key:"",
+        rows:null
+    };
+}
+
 
 function getFilteredReportTransactions(){
 
