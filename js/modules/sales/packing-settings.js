@@ -130,6 +130,10 @@ function savePackingSettings(){
         sellerBooksRecordTodayPackingSnapshot();
     }
 
+    if(typeof sellerBooksRefreshReportViewsAfterMasterChange==="function"){
+        sellerBooksRefreshReportViewsAfterMasterChange();
+    }
+
     closePackingModal();
 
     sellerBooksAlert(
