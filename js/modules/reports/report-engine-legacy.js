@@ -2675,7 +2675,9 @@ function calculateReportFinancial(options){
         performance.now();
 
     const transactions =
-        getFilteredReportTransactions();
+        Array.isArray(options.transactions)
+            ? options.transactions
+            : getFilteredReportTransactions();
 
 
     let totalSales = 0;
