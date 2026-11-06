@@ -126,6 +126,10 @@ function savePackingSettings(){
 
     savePackingCosts();
 
+    if(typeof sellerBooksRecordTodayPackingSnapshot === "function"){
+        sellerBooksRecordTodayPackingSnapshot();
+    }
+
     closePackingModal();
 
     sellerBooksAlert(
