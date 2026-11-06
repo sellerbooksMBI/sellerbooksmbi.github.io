@@ -746,9 +746,14 @@ function renderMarketplacePerformance(){
             transactions
         );
 
+    /* Dashboard memakai mesin biaya packing yang sama dengan Laporan.
+       Nilai dihitung per tanggal transaksi: hari ini LIVE, tanggal lama
+       memakai snapshot historis. */
     const totalPacking =
-        totalPackingCount *
-        getPackingCostPerOrder();
+        calculateReportPackingCost(
+            transactions,
+            totalPackingCount
+        );
 
     /*
        =====================================================
@@ -1200,8 +1205,10 @@ function renderMarketplacePerformance(){
                     );
 
                 const packingCost =
-                    packingCount *
-                    getPackingCostPerOrder();
+                    calculateReportPackingCost(
+                        marketplaceTransactions,
+                        packingCount
+                    );
 
                 const otherCosts =
                     marketplaceCosts.get(
