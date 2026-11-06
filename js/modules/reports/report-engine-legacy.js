@@ -2616,7 +2616,6 @@ function calculateReportPackingCost(transactions, packingCount){
                 const identity = sellerBooksGetSalesImportIdentity(item);
                 if(identity) unitByTransaction.set(identity, unit);
             }
-
             const packingId = String(item.packingId || item.orderId || "").trim().toLowerCase();
             if(!packingId) return;
             const marketplaceId = String(item.marketplaceId || importRecord.marketplaceId || "").trim().toLowerCase();
@@ -2632,23 +2631,38 @@ function calculateReportPackingCost(transactions, packingCount){
             String(item.storeId || "").trim().toLowerCase() + "|" + packingId.toLowerCase();
         if(costByPacking.has(key)) return;
 
+        /*
+         * Biaya packing wajib ditentukan per tanggal transaksi, bukan dari
+         * periode laporan atau nilai global saat ini.
+         * Hari ini selalu LIVE; tanggal sebelum hari ini selalu memakai
+         * snapshot harian yang sudah dibekukan.
+         */
+        const historical = !isReportTransactionToday(item);
         let unit = NaN;
-        if(unitByPacking.has(key)) unit = unitByPacking.get(key);
-        if(!Number.isFinite(unit) && typeof sellerBooksGetSalesImportIdentity === "function"){
-            const identity = sellerBooksGetSalesImportIdentity(item);
-            if(identity && unitByTransaction.has(identity)) unit = unitByTransaction.get(identity);
-        }
-        if(!Number.isFinite(unit)) unit = Number(item.packingCostPerOrderSnapshot);
 
-        if(!Number.isFinite(unit) || unit < 0){
-            const historical = !isReportTransactionToday(item);
-            if(historical){
-                const dailyPacking = sellerBooksGetDailyPackingSnapshot(item.reportDate || item.importedAt);
-                unit = dailyPacking !== null ? dailyPacking : 0;
-            }else{
-                unit = Number(getPackingCostPerOrder()) || 0;
+        if(!historical){
+            unit = Number(getPackingCostPerOrder()) || 0;
+        }else{
+            const reportDate = item.reportDate || item.importedAt || item.transactionDate;
+            const dailyPacking = sellerBooksGetDailyPackingSnapshot(reportDate);
+            if(dailyPacking !== null){
+                unit = dailyPacking;
+            }else if(item.packingCostPerOrderSnapshot !== undefined &&
+                     item.packingCostPerOrderSnapshot !== null &&
+                     item.packingCostPerOrderSnapshot !== ""){
+                unit = Number(item.packingCostPerOrderSnapshot);
+            }else if(typeof sellerBooksGetSalesImportIdentity === "function"){
+                const identity = sellerBooksGetSalesImportIdentity(item);
+                if(identity && unitByTransaction.has(identity)){
+                    unit = unitByTransaction.get(identity);
+                }
             }
+            if(!Number.isFinite(unit) && unitByPacking.has(key)){
+                unit = unitByPacking.get(key);
+            }
+            if(!Number.isFinite(unit) || unit < 0) unit = 0;
         }
+
         costByPacking.set(key, unit);
     });
     let total = 0;
