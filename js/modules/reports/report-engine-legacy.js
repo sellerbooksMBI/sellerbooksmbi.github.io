@@ -1284,7 +1284,9 @@ function getFilteredReportTransactions(){
 function renderReportSalesSummary(){
 
     const transactions =
-        getFilteredReportTransactions();
+        Array.isArray(options.transactions)
+            ? options.transactions
+            : getFilteredReportTransactions();
 
 
     /* =====================================================
@@ -1993,7 +1995,8 @@ function getReportStoresData(){
    karena packing sudah dihitung terpisah
 ========================================================= */
 
-function getReportOtherCosts(){
+function getReportOtherCosts(options){
+    options = options || {};
 
     let costsData = [];
 
@@ -2005,14 +2008,9 @@ function getReportOtherCosts(){
         costsData = [];
     }
 
-    const period =
-        document.getElementById("reportPeriod")?.value || "month";
-
-    const marketplaceId =
-        document.getElementById("reportMarketplace")?.value || "all";
-
-    const storeId =
-        document.getElementById("reportStore")?.value || "all";
+    const period = options.period || document.getElementById("reportPeriod")?.value || "month";
+    const marketplaceId = options.marketplaceId || "all";
+    const storeId = options.storeId || "all";
 
     let total = 0;
     costsData.forEach(function(cost){
@@ -2071,7 +2069,8 @@ function getReportOtherCosts(){
 
 function getReportOtherCostsByScope(
     marketplaceId,
-    storeId
+    storeId,
+    periodOverride
 ){
 
     let costsData = [];
@@ -2084,8 +2083,7 @@ function getReportOtherCostsByScope(
         costsData = [];
     }
 
-    const period =
-        document.getElementById("reportPeriod")?.value || "month";
+    const period = periodOverride || document.getElementById("reportPeriod")?.value || "month";
 
     let total = 0;
 
@@ -2670,7 +2668,8 @@ function calculateReportPackingCost(transactions, packingCount){
     return total;
 }
 
-function calculateReportFinancial(){
+function calculateReportFinancial(options){
+    options = options || {};
 
     const financialStart =
         performance.now();
@@ -2849,7 +2848,11 @@ function calculateReportFinancial(){
     */
 
     const otherCosts =
-        getReportOtherCosts();
+        getReportOtherCosts({
+            period: options.period,
+            marketplaceId: options.marketplaceId,
+            storeId: options.storeId
+        });
 
 
     /*
