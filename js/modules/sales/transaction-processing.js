@@ -931,8 +931,12 @@ function saveSalesImportData(){
                     );
 
             let affiliateCommissionAmount = 0;
+            /* Peta Tarik Order menggunakan storeId::orderId agar Order ID
+               antar akun toko tidak tertukar. Tetap dukung format lama
+               orderId saja untuk kompatibilitas import sebelumnya. */
             const affiliateRecord = transactionOrderId
-                ? affiliateByOrderId[String(transactionOrderId)]
+                ? (affiliateByOrderId[String(storeId)+"::"+String(transactionOrderId)]
+                    || affiliateByOrderId[String(transactionOrderId)])
                 : null;
             if(affiliateRecord && affiliateRecord.found === true && !affiliateOrderSeen.has(String(transactionOrderId))){
                 affiliateCommissionAmount = Math.max(0,Number(affiliateRecord.amount)||0);
