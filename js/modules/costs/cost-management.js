@@ -766,6 +766,9 @@ function saveCost(){
 
     renderCosts();
 
+    if(typeof sellerBooksRefreshReportViewsAfterMasterChange==="function"){
+        sellerBooksRefreshReportViewsAfterMasterChange();
+    }
 
     /* =========================================
        TUTUP
@@ -915,6 +918,10 @@ async function deleteCost(id){
 
 
     renderCosts();
+
+    if(typeof sellerBooksRefreshReportViewsAfterMasterChange==="function"){
+        sellerBooksRefreshReportViewsAfterMasterChange();
+    }
 
 }
 
