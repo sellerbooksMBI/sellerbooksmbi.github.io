@@ -332,6 +332,31 @@ function sellerBooksSnapshotSkuKey(sku){
     return String(sku || "").trim().toLowerCase();
 }
 
+function sellerBooksGetDailyPackingSnapshot(reportDate){
+    if(typeof sellerBooksStorage === "undefined") return null;
+    const date = String(reportDate || "").slice(0,10);
+    if(!date) return null;
+    const state = sellerBooksReadDailySnapshots();
+    const day = state && state.days ? state.days[date] : null;
+    if(!day || day.packingCostPerOrder === undefined || day.packingCostPerOrder === null) return null;
+    const value = Number(day.packingCostPerOrder);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function sellerBooksRecordTodayPackingSnapshot(){
+    if(typeof sellerBooksStorage === "undefined" || typeof getPackingCostPerOrder !== "function") return;
+    const today = getIndonesiaTodayKey();
+    if(!today) return;
+    const state = sellerBooksReadDailySnapshots();
+    state.version = 1;
+    if(!state.days[today]) state.days[today] = {locked:false,products:{},stores:{}};
+    const day = state.days[today];
+    if(day.locked) return;
+    day.packingCostPerOrder = Number(getPackingCostPerOrder()) || 0;
+    day.packingCapturedAt = new Date().toISOString();
+    sellerBooksWriteDailySnapshots(state);
+}
+
 function sellerBooksEnsureTodaySnapshot(){
     if(typeof sellerBooksStorage === "undefined") return;
     const today = getIndonesiaTodayKey();
@@ -351,6 +376,11 @@ function sellerBooksEnsureTodaySnapshot(){
     if(day.locked) return;
 
     let changed = false;
+    if(day.packingCostPerOrder === undefined || day.packingCostPerOrder === null){
+        day.packingCostPerOrder = Number(getPackingCostPerOrder()) || 0;
+        day.packingCapturedAt = new Date().toISOString();
+        changed = true;
+    }
 
     let currentProducts = [];
     try{
@@ -2598,7 +2628,10 @@ function calculateReportPackingCost(transactions, packingCount){
             if(identity && unitByTransaction.has(identity)) unit = unitByTransaction.get(identity);
         }
         if(!Number.isFinite(unit)) unit = Number(item.packingCostPerOrderSnapshot);
-        if(!Number.isFinite(unit) || unit < 0) unit = Number(getPackingCostPerOrder()) || 0;
+        if(!Number.isFinite(unit) || unit < 0){
+            const dailyPacking = sellerBooksGetDailyPackingSnapshot(item.reportDate || item.importedAt);
+            unit = dailyPacking !== null ? dailyPacking : (Number(getPackingCostPerOrder()) || 0);
+        }
         costByPacking.set(key, unit);
     });
     let total = 0;
