@@ -703,126 +703,29 @@ function renderMarketplacePerformance(){
        =====================================================
     */
 
-    let totalSales = 0;
-    let totalQty = 0;
-    let totalHpp = 0;
-    let totalAdmin = 0;
-
-    transactions.forEach(function(item){
-
-        const sales =
-            getReportTransactionSalesAmount(
-                item
-            );
-
-        const qty =
-            Number(item.qty) || 0;
-
-        totalSales += sales;
-        totalQty += qty;
-
-        const product =
-            productMap.get(
-                String(item.sku || "")
-                    .trim()
-                    .toLowerCase()
-            );
-
-        if(product){
-            totalHpp +=
-                getReportTransactionCost(item) *
-                qty;
-        }
-
-        totalAdmin +=
-            sales *
-            getReportTransactionFeePercent(item) /
-            100;
-
-    });
-
-    const totalPackingCount =
-        calculateReportPacking(
-            transactions
-        );
-
-    /* Dashboard memakai mesin biaya packing yang sama dengan Laporan.
-       Nilai dihitung per tanggal transaksi: hari ini LIVE, tanggal lama
-       memakai snapshot historis. */
-    const totalPacking =
-        calculateReportPackingCost(
-            transactions,
-            totalPackingCount
-        );
-
     /*
-       =====================================================
-       BIAYA LAIN TOTAL
-       =====================================================
+       Dashboard tidak menghitung angka keuangan sendiri.
+       Seluruh KPI diambil dari mesin finansial Laporan yang sama.
     */
-
-    let totalOtherCosts = 0;
-
-    if(Array.isArray(costsData)){
-
-        costsData.forEach(function(cost){
-
-            const category =
-                String(
-                    cost.category || ""
-                )
-                .trim()
-                .toLowerCase();
-
-            /* Packing sudah dihitung dari transaksi. */
-            if(
-                category === "packing" ||
-                category.includes("packing")
-            ){
-                return;
-            }
-
-            const dateValue =
-                cost.date ||
-                cost.createdAt;
-
-            if(
-                dateValue &&
-                !isDateInPeriod(
-                    dateValue,
-                    currentDashboardPeriod
-                )
-            ){
-                return;
-            }
-
-            totalOtherCosts +=
-                Number(cost.amount) || 0;
-
+    const dashboardFinancial =
+        calculateReportFinancial({
+            transactions: transactions,
+            period: currentDashboardPeriod,
+            marketplaceId: "all",
+            storeId: "all"
         });
 
-    }
-
-    const totalNetSales =
-        totalSales -
-        totalAdmin;
-
-    const totalGrossProfit =
-        totalNetSales -
-        totalHpp -
-        totalPacking;
-
-    const totalNetProfit =
-        totalGrossProfit -
-        totalOtherCosts;
-
-    const totalMargin =
-        totalSales > 0
-            ? (
-                totalNetProfit /
-                totalSales
-            ) * 100
-            : 0;
+    const totalSales = dashboardFinancial.totalSales;
+    const totalQty = dashboardFinancial.totalQty;
+    const totalHpp = dashboardFinancial.totalHpp;
+    const totalAdmin = dashboardFinancial.totalAdmin;
+    const totalPacking = dashboardFinancial.totalPacking;
+    const totalOtherCosts = dashboardFinancial.otherCosts;
+    const totalNetSales = dashboardFinancial.netSales;
+    const totalGrossProfit = dashboardFinancial.grossProfit;
+    const totalNetProfit = dashboardFinancial.netProfit;
+    const totalMargin = dashboardFinancial.margin;
+    const totalPackingCount = dashboardFinancial.packingCount;
 
     // Update diagram statistik berdasarkan transaksi periode aktif.
     sellerBooksRenderDashboardCharts(transactions);
@@ -1150,88 +1053,19 @@ function renderMarketplacePerformance(){
                         marketplaceName
                     );
 
-                let sales = 0;
-                let qty = 0;
-                let hpp = 0;
-                let admin = 0;
+                const marketplaceFinancial =
+                    calculateReportFinancial({
+                        transactions: marketplaceTransactions,
+                        period: currentDashboardPeriod,
+                        marketplaceId: marketplaceId,
+                        storeId: "all"
+                    });
 
-                marketplaceTransactions.forEach(
-                    function(item){
-
-                        const itemSales =
-                            getReportTransactionSalesAmount(
-                                item
-                            );
-
-                        const itemQty =
-                            Number(
-                                item.qty
-                            ) || 0;
-
-                        sales +=
-                            itemSales;
-
-                        qty +=
-                            itemQty;
-
-                        const product =
-                            productMap.get(
-                                String(
-                                    item.sku || ""
-                                )
-                                .trim()
-                                .toLowerCase()
-                            );
-
-                        if(product){
-
-                            hpp +=
-                                getReportTransactionCost(item) *
-                                itemQty;
-
-                        }
-
-                        admin +=
-                            itemSales *
-                            getReportTransactionFeePercent(item) /
-                            100;
-
-                    }
-                );
-
-                const packingCount =
-                    calculateReportPacking(
-                        marketplaceTransactions
-                    );
-
-                const packingCost =
-                    calculateReportPackingCost(
-                        marketplaceTransactions,
-                        packingCount
-                    );
-
-                const otherCosts =
-                    marketplaceCosts.get(
-                        marketplaceId
-                    ) || 0;
-
-                const netSales =
-                    sales -
-                    admin;
-
-                const netProfit =
-                    netSales -
-                    hpp -
-                    packingCost -
-                    otherCosts;
-
-                const margin =
-                    sales > 0
-                        ? (
-                            netProfit /
-                            sales
-                        ) * 100
-                        : 0;
+                const sales = marketplaceFinancial.totalSales;
+                const qty = marketplaceFinancial.totalQty;
+                const packingCount = marketplaceFinancial.packingCount;
+                const netProfit = marketplaceFinancial.netProfit;
+                const margin = marketplaceFinancial.margin;
 
                 return {
                     marketplace:
