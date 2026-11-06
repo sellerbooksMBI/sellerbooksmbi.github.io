@@ -3131,11 +3131,13 @@ function renderReportMarketplaceTable(){
                     qty:0,
                     admin:0,
                     hpp:0,
-                    packingIds:new Set()
+                    packingIds:new Set(),
+                    transactions:[]
                 });
             }
 
             const group = groups.get(marketplaceId);
+            group.transactions.push(item);
             const sales = getReportTransactionSalesAmount(item);
             const qty = Number(item.qty) || 0;
 
@@ -3163,7 +3165,7 @@ function renderReportMarketplaceTable(){
 
         groups.forEach(function(group){
             const netSales = group.sales - group.admin;
-            const packingCost = group.packingIds.size * getPackingCostPerOrder();
+            const packingCost = calculateReportPackingCost(group.transactions, group.packingIds.size);
 
             const otherCosts = getReportOtherCostsByScope(
                 group.marketplaceId,
@@ -3225,11 +3227,13 @@ function renderReportStoreTable(){
                     qty:0,
                     admin:0,
                     hpp:0,
-                    packingIds:new Set()
+                    packingIds:new Set(),
+                    transactions:[]
                 });
             }
 
             const group = groups.get(storeId);
+            group.transactions.push(item);
             const sales = getReportTransactionSalesAmount(item);
             const qty = Number(item.qty) || 0;
 
@@ -3253,7 +3257,7 @@ function renderReportStoreTable(){
 
         groups.forEach(function(group){
             const netSales = group.sales - group.admin;
-            const packingCost = group.packingIds.size * getPackingCostPerOrder();
+            const packingCost = calculateReportPackingCost(group.transactions, group.packingIds.size);
 
             const otherCosts = getReportOtherCostsByScope(
                 "all",
