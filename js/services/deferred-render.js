@@ -40,3 +40,24 @@ function sellerBooksRefreshReportViewsAfterMasterChange(){
         }
     });
 }
+
+
+/* Setelah import selesai, hanya render ulang halaman yang sedang terlihat.
+   Menghindari hitung Laporan/Produk/Toko di belakang layar yang tidak dilihat user. */
+function sellerBooksRefreshActiveViewAfterSalesImport(){
+    sellerBooksScheduleDeferredRender(function(){
+        const isActive=function(id){
+            return document.getElementById(id)?.classList.contains("active")===true;
+        };
+        if(isActive("dashboard") && typeof updateDashboardByPeriod==="function"){
+            updateDashboardByPeriod();
+        }else if(isActive("reports") && typeof updateReports==="function"){
+            updateReports();
+        }else if(isActive("productAnalysis") && typeof renderProductAnalysis==="function"){
+            renderProductAnalysis();
+        }else if(isActive("products")){
+            if(typeof renderProducts==="function")renderProducts();
+            if(typeof renderNotifications==="function")renderNotifications();
+        }
+    });
+}
