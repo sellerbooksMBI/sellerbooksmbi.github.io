@@ -3646,9 +3646,7 @@ async function deleteSelectedReportTransactions(){
     });
     sellerBooksStorage.setItem("sellerbooks_sales_imports",JSON.stringify(remainingImports));
     selectedReportTransactionKeys.clear();
-    sellerBooksReportTransactionsCacheImports=null;sellerBooksReportTransactionsCache=null;
-    sellerBooksReportFilteredTransactionsCache={sourceTransactions:null,key:"",transactions:null};
-    sellerBooksProductAnalysisRowsCache={sourceTransactions:null,key:"",rows:null};
+    sellerBooksInvalidateSalesReportCaches();
     updateReports();
     const en=sellerBooksCurrentLanguage()==="en";
     try{
