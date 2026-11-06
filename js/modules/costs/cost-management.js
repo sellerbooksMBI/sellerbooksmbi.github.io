@@ -63,14 +63,14 @@ function sellerBooksCostText(key){
         emptyTitle:"Belum Ada Biaya Tambahan",emptyDescription:"Tambahkan biaya seperti iklan, transport, operasional atau biaya lainnya.",date:"Tanggal",marketplace:"Marketplace",storeAccount:"Akun Toko",category:"Kategori",description:"Keterangan",amount:"Nominal",notes:"Catatan",actions:"Aksi",edit:"Edit",delete:"Hapus",
         addTitle:"Tambah Biaya",editTitle:"Edit Biaya",selectMarketplace:"-- Pilih Marketplace --",marketplaceHelp:"Pilih marketplace tempat biaya ini terjadi.",selectStore:"-- Pilih Akun Toko --",storeHelp:"Hanya akun dari marketplace yang dipilih yang ditampilkan.",
         categoryLabel:"Kategori Biaya",selectCategory:"-- Pilih Kategori --",advertising:"Iklan",transport:"Transport",operations:"Operasional",other:"Lainnya",descriptionLabel:"Keterangan",descriptionPlaceholder:"Contoh: Biaya iklan TikTok bulan ini",amountLabel:"Nominal Biaya",amountPlaceholder:"Contoh: 50000",notesLabel:"Catatan",optional:"(Opsional)",notesPlaceholder:"Catatan tambahan...",cancel:"Batal",save:"Simpan Biaya",
-        requiredDate:"Tanggal biaya wajib diisi.",requiredMarketplace:"Marketplace wajib dipilih.",requiredStore:"Akun toko wajib dipilih.",requiredCategory:"Kategori biaya wajib dipilih.",requiredDescription:"Keterangan biaya wajib diisi.",invalidAmount:"Nominal biaya harus lebih dari 0.",notFound:"Data biaya tidak ditemukan.",lockedEdit:"Biaya tanggal {date} sudah menjadi snapshot dan tidak dapat diedit lagi.",deleteConfirm:"Hapus biaya \"{description}\" sebesar {amount}?"
+        requiredDate:"Tanggal biaya wajib diisi.",requiredMarketplace:"Marketplace wajib dipilih.",requiredStore:"Akun toko wajib dipilih.",requiredCategory:"Kategori biaya wajib dipilih.",requiredDescription:"Keterangan biaya wajib diisi.",invalidAmount:"Nominal biaya harus lebih dari 0.",notFound:"Data biaya tidak ditemukan.",lockedEdit:"Biaya tanggal {date} sudah menjadi snapshot dan tidak dapat diedit lagi.",onlyToday:"Tanggal biaya baru atau perubahan biaya harus menggunakan tanggal hari ini. Biaya tanggal lampau hanya dapat dihapus.",deleteConfirm:"Hapus biaya \"{description}\" sebesar {amount}?"
     };
     const en={
         pageTitle:"Other Costs",pageSubtitle:"Record additional costs that affect your business profit.",add:"Add Cost",total:"Total Other Costs",listTitle:"Cost List",listSubtitle:"All additional costs that have been recorded.",
         emptyTitle:"No Additional Costs",emptyDescription:"Add costs such as advertising, transport, operations, or other expenses.",date:"Date",marketplace:"Marketplace",storeAccount:"Store Account",category:"Category",description:"Description",amount:"Amount",notes:"Notes",actions:"Actions",edit:"Edit",delete:"Delete",
         addTitle:"Add Cost",editTitle:"Edit Cost",selectMarketplace:"-- Select Marketplace --",marketplaceHelp:"Select the marketplace where this cost occurred.",selectStore:"-- Select Store Account --",storeHelp:"Only accounts from the selected marketplace are shown.",
         categoryLabel:"Cost Category",selectCategory:"-- Select Category --",advertising:"Advertising",transport:"Transport",operations:"Operations",other:"Other",descriptionLabel:"Description",descriptionPlaceholder:"Example: TikTok advertising cost this month",amountLabel:"Cost Amount",amountPlaceholder:"Example: 50000",notesLabel:"Notes",optional:"(Optional)",notesPlaceholder:"Additional notes...",cancel:"Cancel",save:"Save Cost",
-        requiredDate:"Cost date is required.",requiredMarketplace:"A marketplace must be selected.",requiredStore:"A store account must be selected.",requiredCategory:"A cost category must be selected.",requiredDescription:"Cost description is required.",invalidAmount:"Cost amount must be greater than 0.",notFound:"Cost data was not found.",lockedEdit:"The cost dated {date} is already a snapshot and can no longer be edited.",deleteConfirm:"Delete cost \"{description}\" for {amount}?"
+        requiredDate:"Cost date is required.",requiredMarketplace:"A marketplace must be selected.",requiredStore:"A store account must be selected.",requiredCategory:"A cost category must be selected.",requiredDescription:"Cost description is required.",invalidAmount:"Cost amount must be greater than 0.",notFound:"Cost data was not found.",lockedEdit:"The cost dated {date} is already a snapshot and can no longer be edited.",onlyToday:"New costs and cost changes must use today’s date. Past costs can only be deleted.",deleteConfirm:"Delete cost \"{description}\" for {amount}?"
     };
     const source=language==="en"?en:id;
     return source[key] ?? id[key] ?? key;
@@ -644,6 +644,12 @@ function saveCost(){
 
     }
 
+
+    const todayCostDate = getIndonesiaDateString(new Date());
+    if(String(date) !== String(todayCostDate)){
+        sellerBooksAlert(sellerBooksCostText("onlyToday"));
+        return;
+    }
 
     /* =========================================
        EDIT
