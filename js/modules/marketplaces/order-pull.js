@@ -144,18 +144,35 @@ async function syncTikTokOrdersNowInternal(storeId){
         }
 
         if(result.status==="RAW_FILE_READY"){
+            /* Catat Order ID yang sudah ada SEBELUM import berjalan.
+               Dengan begitu affiliate hanya diperiksa untuk Order ID yang
+               benar-benar baru masuk pada proses Tarik Order ini. */
+            const existingOrderIds=new Set();
+            try{
+                const savedImports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
+                savedImports.forEach(function(record){
+                    if(String(record.storeId||"")!==String(store.id)||!/tiktok/i.test(String(record.marketplace||"")))return;
+                    (record.transactions||[]).forEach(function(tx){
+                        const id=String(tx.orderId||"").trim();
+                        if(id)existingOrderIds.add(id);
+                    });
+                });
+            }catch(storageError){
+                console.warn("Tidak dapat membaca daftar Order ID sebelum import:",storageError);
+            }
+
             /* Tahap 1: masukkan semua order ke mesin Import Penjualan terlebih dahulu.
                Affiliate tidak boleh menahan order; nilai awal setiap order adalah Rp0. */
             await sellerBooksDispatchExcelQueue({showResult:true});
 
-            /* Tahap 2: setelah Order ID tersimpan, periksa affiliate berdasarkan
-               daftar Order ID batch ini. Jika tidak ditemukan/gagal dibaca, nilainya 0. */
+            /* Tahap 2: periksa hanya Order ID baru dari batch ini.
+               Order yang sudah ada tidak dihitung ulang saat Tarik Order diulang. */
             const financeOrders=Array.isArray(result.finance_orders)?result.finance_orders:[];
             const uniqueOrderIds=[];
             const seenOrderIds=new Set();
             financeOrders.forEach(function(item){
                 const id=String(item?.order_id||"").trim();
-                if(!id||seenOrderIds.has(id))return;
+                if(!id||seenOrderIds.has(id)||existingOrderIds.has(id))return;
                 seenOrderIds.add(id);
                 uniqueOrderIds.push(id);
             });
