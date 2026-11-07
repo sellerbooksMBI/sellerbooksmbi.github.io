@@ -38,14 +38,20 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
     });
     const result=await response.json().catch(function(){return {};});
     if(!response.ok || !result.ok) throw new Error(String(result.error||("TikTok affiliate lookup HTTP "+response.status)));
-    const affiliate=result.affiliate_commission||{};
+    /* Edge Function mengembalikan audit pada settled_lookup, bukan
+       result.affiliate_commission. Lookup ini sengaja hanya memakai Order ID;
+       tidak memakai tanggal untuk menentukan order yang diperiksa. */
+    const affiliate=result?.settled_lookup?.fee_component_audit?.components?.affiliate_commission||{};
+    const lookupError=String(result?.settled_lookup?.error||"");
+    const found=affiliate.found===true && Number.isFinite(Number(affiliate.amount));
     return {
         order_id:order,
-        found:affiliate.found===true,
-        amount:affiliate.found===true ? Number(affiliate.amount)||0 : null,
-        source_mode:String(affiliate.source_mode||""),
-        source_field:String(affiliate.source_field||""),
-        status:String(affiliate.status||"UNAVAILABLE")
+        found:found,
+        amount:found ? Number(affiliate.amount)||0 : null,
+        source_mode:String(result?.settled_lookup?.fee_component_audit?.source_mode||"SETTLED_FINAL"),
+        source_field:String(affiliate.selected_field||affiliate.verified_field||""),
+        status:found ? "SETTLED_AFFILIATE_FOUND" : (lookupError ? "LOOKUP_ERROR" : String(result?.settlement_status||"AFFILIATE_NOT_AVAILABLE")),
+        error:lookupError
     };
 };
 
@@ -89,6 +95,7 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
         }
         const amount=result&&result.found===true&&Number.isFinite(Number(result.amount))
             ? Math.abs(Number(result.amount)||0) : 0;
+        if(result&&result.error)failed++;
         if(result&&result.found===true&&Number.isFinite(Number(result.amount)))found++;
         amounts.set(item.recordId+"::"+item.orderId,amount);
     }
