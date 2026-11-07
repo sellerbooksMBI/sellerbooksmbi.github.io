@@ -1045,6 +1045,36 @@ async function deleteReportsByDateRange(){
 
 /* PATCH L: cache hasil filter transaksi Laporan dan hasil agregasi Rincian.
    Cache hanya berlaku selama sumber transaksi dan filter tetap sama. */
+/* Cache Master Produk untuk render laporan.
+   Kunci memakai isi storage mentah agar perubahan dari jalur penyimpanan
+   mana pun otomatis menghasilkan cache baru tanpa mengubah aturan bisnis. */
+let sellerBooksReportMasterProductsCacheSource = null;
+let sellerBooksReportMasterProductsCache = [];
+
+function getSellerBooksReportMasterProducts(){
+    let source = "[]";
+    try{
+        source = sellerBooksStorage.getItem("sellerbooks_products") || "[]";
+    }catch(error){
+        return [];
+    }
+
+    if(source === sellerBooksReportMasterProductsCacheSource){
+        return sellerBooksReportMasterProductsCache;
+    }
+
+    sellerBooksReportMasterProductsCacheSource = source;
+    try{
+        const parsed = JSON.parse(source);
+        sellerBooksReportMasterProductsCache =
+            Array.isArray(parsed) ? parsed : [];
+    }catch(error){
+        sellerBooksReportMasterProductsCache = [];
+    }
+
+    return sellerBooksReportMasterProductsCache;
+}
+
 let sellerBooksReportFilteredTransactionsCache = {
     sourceTransactions:null,
     key:"",
@@ -1403,28 +1433,8 @@ function renderReportSalesSummary(){
        LOAD MASTER PRODUK
     ===================================================== */
 
-    let masterProducts = [];
-
-    try{
-
-        masterProducts =
-            JSON.parse(
-                sellerBooksStorage.getItem(
-                    "sellerbooks_products"
-                ) || "[]"
-            );
-
-    }
-    catch(error){
-
-        console.error(
-            "Gagal membaca Master Produk:",
-            error
-        );
-
-        masterProducts = [];
-
-    }
+    const masterProducts =
+        getSellerBooksReportMasterProducts();
 
 
     /* =====================================================
@@ -2743,30 +2753,8 @@ function calculateReportFinancial(options){
     let totalAdmin = 0;
 
 
-    const masterProducts = [];
-
-    try{
-
-        const data =
-            JSON.parse(
-                sellerBooksStorage.getItem(
-                    "sellerbooks_products"
-                ) || "[]"
-            );
-
-        if(
-            Array.isArray(data)
-        ){
-
-            data.forEach(function(product){
-
-                masterProducts.push(product);
-
-            });
-
-        }
-
-    }catch(error){}
+    const masterProducts =
+        getSellerBooksReportMasterProducts();
 
 
     const productMap =
