@@ -146,27 +146,71 @@ async function syncTikTokOrdersNowInternal(storeId){
         if(result.status==="RAW_FILE_READY"){
             const affiliateByOrderId={};
             const financeOrders=Array.isArray(result.finance_orders)?result.finance_orders:[];
-            for(const financeOrder of financeOrders){
-                if(typeof window.sellerBooksFetchTikTokAffiliate!=="function")break;
-                try{
-                    const affiliate=await window.sellerBooksFetchTikTokAffiliate(
-                        financeOrder.order_id,
-                        financeOrder.order_create_time,
-                        String(store.id)
-                    );
-                    if(affiliate.found===true){
-                        affiliateByOrderId[String(store.id)+"::"+String(financeOrder.order_id)]={
-                            amount:Number(affiliate.amount)||0,
-                            found:true,
-                            source_mode:affiliate.source_mode
-                        };
-                    }else{
-                        console.warn("Affiliate TikTok belum tersedia untuk order "+financeOrder.order_id+"; admin lama tetap digunakan.");
-                    }
-                }catch(financeError){
-                    console.warn("Pengambilan Affiliate TikTok gagal untuk order "+financeOrder.order_id+"; admin lama tetap digunakan:",financeError);
-                }
+            const uniqueFinanceOrders=[];
+            const seenFinanceOrderIds=new Set();
+            financeOrders.forEach(function(item){
+                const orderId=String(item?.order_id||"").trim();
+                if(!orderId||seenFinanceOrderIds.has(orderId))return;
+                seenFinanceOrderIds.add(orderId);
+                uniqueFinanceOrders.push(item);
+            });
+
+            if(!uniqueFinanceOrders.length){
+                throw new Error("Data order TikTok tersedia, tetapi daftar Order ID untuk pemeriksaan affiliate kosong. Import dihentikan agar biaya tidak terlewat.");
             }
+            if(typeof window.sellerBooksFetchTikTokAffiliate!=="function"){
+                throw new Error("Modul pemeriksaan affiliate TikTok tidak tersedia. Order belum diimpor.");
+            }
+
+            const affiliateFailures=[];
+            for(const financeOrder of uniqueFinanceOrders){
+                const orderId=String(financeOrder.order_id).trim();
+                let affiliate=null;
+                let lastError=null;
+                for(let attempt=1;attempt<=3;attempt++){
+                    try{
+                        affiliate=await window.sellerBooksFetchTikTokAffiliate(
+                            orderId,
+                            financeOrder.order_create_time,
+                            String(store.id)
+                        );
+                        if(affiliate.found===true && Number.isFinite(Number(affiliate.amount))){
+                            break;
+                        }
+                        lastError=new Error("Data affiliate belum tersedia (status "+String(affiliate.status||"NOT_AVAILABLE")+")");
+                    }catch(financeError){
+                        lastError=financeError;
+                    }
+                    if(attempt<3){
+                        await new Promise(function(resolve){setTimeout(resolve,attempt*1000);});
+                    }
+                }
+
+                if(!affiliate || affiliate.found!==true || !Number.isFinite(Number(affiliate.amount))){
+                    affiliateFailures.push(orderId+" — "+(lastError?.message||"affiliate belum tersedia"));
+                    continue;
+                }
+
+                affiliateByOrderId[String(store.id)+"::"+orderId]={
+                    amount:Number(affiliate.amount)||0,
+                    found:true,
+                    source_mode:affiliate.source_mode,
+                    source_field:affiliate.source_field
+                };
+            }
+
+            if(affiliateFailures.length){
+                throw new Error(
+                    "Import TikTok ditahan karena biaya affiliate belum berhasil ditemukan untuk semua order.\n\n"+
+                    affiliateFailures.join("\n")+
+                    "\n\nSilakan coba Tarik Order kembali. Tidak ada transaksi baru yang diteruskan ke mesin Import Penjualan."
+                );
+            }
+
+            if(Object.keys(affiliateByOrderId).length!==uniqueFinanceOrders.length){
+                throw new Error("Jumlah hasil affiliate tidak sama dengan jumlah Order ID. Import dihentikan untuk mencegah biaya affiliate terlewat.");
+            }
+
             await sellerBooksDispatchExcelQueue({
                 showResult:true,
                 affiliateByOrderId:affiliateByOrderId
