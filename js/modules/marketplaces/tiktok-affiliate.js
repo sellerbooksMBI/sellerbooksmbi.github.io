@@ -49,3 +49,89 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
     };
 };
 
+
+
+/*
+ * Post-import affiliate lookup. The order import is already durable before
+ * this runs. Each Order ID is updated once; missing/failed lookup remains Rp0.
+ */
+window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId, orderIds){
+    const ids=Array.from(new Set((Array.isArray(orderIds)?orderIds:[])
+        .map(function(value){return String(value||"").trim();}).filter(Boolean)));
+    if(!ids.length)return {checked:0,found:0,zero:0,failed:0};
+    if(!sellerBooksCloudReady || sellerBooksCloudLoading || !sellerBooksAuthUser){
+        throw new Error("Sinkronisasi cloud belum siap.");
+    }
+
+    const keySet=new Set(ids);
+    const imports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
+    const pending=[];
+    imports.forEach(function(record){
+        if(String(record.storeId||"")!==String(storeId)||!/tiktok/i.test(String(record.marketplace||"")))return;
+        const perOrder=new Map();
+        (record.transactions||[]).forEach(function(tx,index){
+            const orderId=String(tx.orderId||"").trim();
+            if(!keySet.has(orderId))return;
+            if(!perOrder.has(orderId))perOrder.set(orderId,{recordId:String(record.id||""),index:index,orderId:orderId});
+        });
+        perOrder.forEach(function(item){pending.push(item);});
+    });
+    if(!pending.length)return {checked:0,found:0,zero:0,failed:0};
+
+    const amounts=new Map();
+    let found=0,failed=0;
+    for(const item of pending){
+        let result=null;
+        try{
+            result=await window.sellerBooksFetchTikTokAffiliate(item.orderId,0,storeId);
+        }catch(error){
+            failed++;
+        }
+        const amount=result&&result.found===true&&Number.isFinite(Number(result.amount))
+            ? Math.abs(Number(result.amount)||0) : 0;
+        if(result&&result.found===true&&Number.isFinite(Number(result.amount)))found++;
+        else if(!result)failed++;
+        amounts.set(item.recordId+"::"+item.orderId,amount);
+    }
+
+    const latest=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
+    let updated=0;
+    latest.forEach(function(record){
+        if(String(record.storeId||"")!==String(storeId)||!/tiktok/i.test(String(record.marketplace||"")))return;
+        const seen=new Set();
+        (record.transactions||[]).forEach(function(tx){
+            const orderId=String(tx.orderId||"").trim();
+            const key=String(record.id||"")+"::"+orderId;
+            if(!amounts.has(key))return;
+            if(!seen.has(orderId)){
+                tx.affiliateCommissionAmount=amounts.get(key);
+                seen.add(orderId);
+                updated++;
+            }else{
+                tx.affiliateCommissionAmount=0;
+            }
+        });
+    });
+
+    sellerBooksStorage.setItem("sellerbooks_sales_imports",JSON.stringify(latest));
+    if(typeof sellerBooksInvalidateSalesReportCaches==="function")sellerBooksInvalidateSalesReportCaches();
+    const expected=sellerBooksCloneCloudState(sellerBooksCloudState);
+    await sellerBooksPersistCloudDataStrict(expected,function(savedData){
+        let saved=[];
+        try{saved=JSON.parse(savedData["sellerbooks_sales_imports"]||"[]")||[];}catch(error){return false;}
+        const verify=new Map();
+        saved.forEach(function(record){
+            if(String(record.storeId||"")!==String(storeId))return;
+            (record.transactions||[]).forEach(function(tx){
+                const key=String(record.id||"")+"::"+String(tx.orderId||"").trim();
+                if(amounts.has(key)&&!verify.has(key))verify.set(key,Number(tx.affiliateCommissionAmount||0));
+            });
+        });
+        return Array.from(amounts.entries()).every(function(entry){
+            return verify.has(entry[0])&&Math.abs(verify.get(entry[0])-entry[1])<0.01;
+        });
+    });
+    if(typeof sellerBooksRefreshActiveViewAfterSalesImport==="function")sellerBooksRefreshActiveViewAfterSalesImport();
+    else if(typeof updateReports==="function")updateReports();
+    return {checked:pending.length,found:found,zero:pending.length-found,failed:failed,updated:updated};
+};
