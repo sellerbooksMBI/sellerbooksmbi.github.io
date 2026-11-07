@@ -72,25 +72,32 @@ window.sellerBooksReconcileMissingTikTokAffiliate = async function(){
             throw new Error("Data import penjualan tidak dapat dibaca.");
         }
 
-        const pending=new Map();
+        const orderGroups=new Map();
         imports.forEach(function(record){
             if(!/tiktok/i.test(String(record.marketplace||"")))return;
             (record.transactions||[]).forEach(function(tx,index){
-                if(!String(tx.orderId||"").trim())return;
-                if(Number(tx.affiliateCommissionAmount||0)>0)return;
-                const storeId=String(tx.storeId||record.storeId||"");
                 const orderId=String(tx.orderId||"").trim();
+                if(!orderId)return;
+                const storeId=String(tx.storeId||record.storeId||"");
                 const key=storeId+"::"+orderId;
-                if(!pending.has(key)){
-                    pending.set(key,{
+                if(!orderGroups.has(key)){
+                    orderGroups.set(key,{
                         storeId:storeId,
                         orderId:orderId,
                         orderCreateTime:Number(tx.orderCreateTime||0),
                         recordId:String(record.id||""),
-                        transactionIndex:index
+                        transactionIndex:index,
+                        alreadyHasAffiliate:false
                     });
                 }
+                if(Number(tx.affiliateCommissionAmount||0)>0){
+                    orderGroups.get(key).alreadyHasAffiliate=true;
+                }
             });
+        });
+        const pending=new Map();
+        orderGroups.forEach(function(item,key){
+            if(!item.alreadyHasAffiliate)pending.set(key,item);
         });
         if(!pending.size)return {checked:0,updated:0};
 
