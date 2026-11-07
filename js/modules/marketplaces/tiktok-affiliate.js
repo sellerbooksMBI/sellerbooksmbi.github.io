@@ -50,3 +50,123 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
         status:String(affiliate.status||"UNAVAILABLE")
     };
 };
+
+
+/*
+ * Repair historical TikTok imports whose affiliate lookup was skipped or
+ * unavailable during the original pull. Updates only affiliateCommissionAmount
+ * on one transaction row per Order ID; sales, SKU fees, QTY and COGS are untouched.
+ */
+window.sellerBooksReconcileMissingTikTokAffiliate = async function(){
+    if(window.__sellerBooksAffiliateReconcilePromise){
+        return window.__sellerBooksAffiliateReconcilePromise;
+    }
+    window.__sellerBooksAffiliateReconcilePromise=(async function(){
+        if(!sellerBooksCloudReady || sellerBooksCloudLoading || !sellerBooksAuthUser){
+            throw new Error("Sinkronisasi cloud belum siap untuk pemeriksaan affiliate lama.");
+        }
+        let imports=[];
+        try{
+            imports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
+        }catch(error){
+            throw new Error("Data import penjualan tidak dapat dibaca.");
+        }
+
+        const pending=new Map();
+        imports.forEach(function(record){
+            if(!/tiktok/i.test(String(record.marketplace||"")))return;
+            (record.transactions||[]).forEach(function(tx,index){
+                if(!String(tx.orderId||"").trim())return;
+                if(Number(tx.affiliateCommissionAmount||0)>0)return;
+                const storeId=String(tx.storeId||record.storeId||"");
+                const orderId=String(tx.orderId||"").trim();
+                const key=storeId+"::"+orderId;
+                if(!pending.has(key)){
+                    pending.set(key,{
+                        storeId:storeId,
+                        orderId:orderId,
+                        orderCreateTime:Number(tx.orderCreateTime||0),
+                        recordId:String(record.id||""),
+                        transactionIndex:index
+                    });
+                }
+            });
+        });
+        if(!pending.size)return {checked:0,updated:0};
+
+        const resolved=[];
+        const failed=[];
+        for(const item of pending.values()){
+            if(!item.orderCreateTime){
+                failed.push(item.orderId+" (waktu pembuatan order tidak tersimpan)");
+                continue;
+            }
+            let result=null;
+            let lastError=null;
+            for(let attempt=1;attempt<=3;attempt++){
+                try{
+                    result=await window.sellerBooksFetchTikTokAffiliate(
+                        item.orderId,item.orderCreateTime,item.storeId
+                    );
+                    if(result.found===true && Number.isFinite(Number(result.amount)))break;
+                    lastError=new Error("Affiliate belum tersedia");
+                }catch(error){
+                    lastError=error;
+                }
+                if(attempt<3)await new Promise(function(resolve){setTimeout(resolve,attempt*1000);});
+            }
+            if(!result || result.found!==true || !Number.isFinite(Number(result.amount))){
+                failed.push(item.orderId+" ("+(lastError?.message||"lookup gagal")+")");
+                continue;
+            }
+            resolved.push({item:item,amount:Math.abs(Number(result.amount)||0)});
+        }
+
+        if(!resolved.length){
+            return {checked:pending.size,updated:0,failed:failed};
+        }
+
+        const updatedImports=imports.map(function(record){
+            const copy={...record,transactions:(record.transactions||[]).map(function(tx){return {...tx};})};
+            return copy;
+        });
+        let updated=0;
+        resolved.forEach(function(entry){
+            const target=updatedImports.find(function(record){return String(record.id||"")===entry.item.recordId;});
+            if(!target)return;
+            const tx=target.transactions[entry.item.transactionIndex];
+            if(!tx || String(tx.orderId||"").trim()!==entry.item.orderId)return;
+            tx.affiliateCommissionAmount=entry.amount;
+            updated++;
+        });
+        if(!updated)return {checked:pending.size,updated:0,failed:failed};
+
+        sellerBooksStorage.setItem("sellerbooks_sales_imports",JSON.stringify(updatedImports));
+        if(typeof sellerBooksInvalidateSalesReportCaches==="function"){
+            sellerBooksInvalidateSalesReportCaches();
+        }
+        const expected=sellerBooksCloneCloudState(sellerBooksCloudState);
+        await sellerBooksPersistCloudDataStrict(expected,function(savedData){
+            let saved=[];
+            try{saved=JSON.parse(savedData["sellerbooks_sales_imports"]||"[]")||[];}catch(error){return false;}
+            const byId=new Map(saved.map(function(record){return [String(record.id||""),record];}));
+            return resolved.every(function(entry){
+                const record=byId.get(entry.item.recordId);
+                const tx=record?.transactions?.[entry.item.transactionIndex];
+                return tx && String(tx.orderId||"").trim()===entry.item.orderId &&
+                    Math.abs(Number(tx.affiliateCommissionAmount||0)-entry.amount)<0.01;
+            });
+        });
+        if(typeof sellerBooksRefreshActiveViewAfterSalesImport==="function"){
+            sellerBooksRefreshActiveViewAfterSalesImport();
+        }else if(typeof updateReports==="function"){
+            updateReports();
+        }
+        return {checked:pending.size,updated:updated,failed:failed};
+    })();
+    try{
+        return await window.__sellerBooksAffiliateReconcilePromise;
+    }finally{
+        window.__sellerBooksAffiliateReconcilePromise=null;
+    }
+};
