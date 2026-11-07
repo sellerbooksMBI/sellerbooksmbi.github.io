@@ -84,7 +84,12 @@ window.sellerBooksReconcileMissingTikTokAffiliate = async function(){
                     orderGroups.set(key,{
                         storeId:storeId,
                         orderId:orderId,
-                        orderCreateTime:Number(tx.orderCreateTime||0),
+                        orderCreateTime:Number(tx.orderCreateTime||0) || (function(){
+                            const rawDate=tx.transactionDate||tx.reportDate||record.reportDate||tx.importedAt||record.importedAt;
+                            if(!rawDate)return 0;
+                            const parsed=Date.parse(String(rawDate));
+                            return Number.isFinite(parsed)&&parsed>0?Math.floor(parsed/1000):0;
+                        })(),
                         recordId:String(record.id||""),
                         transactionIndex:index,
                         alreadyHasAffiliate:false
@@ -130,6 +135,14 @@ window.sellerBooksReconcileMissingTikTokAffiliate = async function(){
         }
 
         if(!resolved.length){
+            if(typeof sellerBooksAlert==="function"){
+                const en=typeof sellerBooksCurrentLanguage==="function"&&sellerBooksCurrentLanguage()==="en";
+                sellerBooksAlert(
+                    (en?"No TikTok affiliate amounts could be recovered.\\n":"Belum ada biaya affiliate TikTok yang berhasil ditemukan.\\n")+
+                    failed.join("\\n"),
+                    en?"Affiliate repair needs attention":"Affiliate belum ditemukan"
+                );
+            }
             return {checked:pending.size,updated:0,failed:failed};
         }
 
