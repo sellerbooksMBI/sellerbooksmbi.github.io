@@ -111,6 +111,17 @@ function saveSellerBooksSettings(){
         String(packingCost)
     );
 
+    // Simpan nilai packing terbaru ke snapshot tanggal berjalan.
+    // Dengan begitu, setelah pergantian hari laporan historis tetap
+    // memakai nilai yang disimpan sebelum pukul 00.00.
+    if(typeof sellerBooksRecordTodayPackingSnapshot === "function"){
+        sellerBooksRecordTodayPackingSnapshot();
+    }
+
+    if(typeof sellerBooksRefreshReportViewsAfterMasterChange === "function"){
+        sellerBooksRefreshReportViewsAfterMasterChange();
+    }
+
     applySellerBooksSettings();
 
     sellerBooksApplySettingsLanguage();
