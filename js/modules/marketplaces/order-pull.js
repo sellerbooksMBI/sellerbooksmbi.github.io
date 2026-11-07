@@ -166,13 +166,11 @@ async function syncTikTokOrdersNowInternal(storeId){
                         String(store.id),uniqueOrderIds
                     );
                     console.info("TikTok affiliate batch result:",outcome);
-                    if(outcome.failed>0){
-                        sellerBooksAlert(
-                            "Order berhasil masuk. Affiliate diperiksa untuk "+outcome.checked+" order; "+
-                            outcome.found+" ditemukan dan "+outcome.zero+" disimpan Rp0 karena belum tersedia/gagal dibaca.",
-                            "Hasil pemeriksaan Affiliate TikTok"
-                        );
-                    }
+                    sellerBooksAlert(
+                        "Order berhasil masuk. Affiliate diperiksa untuk "+outcome.checked+" order; "+
+                        outcome.found+" ditemukan dan "+outcome.zero+" dihitung Rp0 karena belum tersedia.",
+                        "Hasil pemeriksaan Affiliate TikTok"
+                    );
                 }catch(affiliateError){
                     console.error("Pemeriksaan affiliate setelah import gagal:",affiliateError);
                     sellerBooksAlert(
