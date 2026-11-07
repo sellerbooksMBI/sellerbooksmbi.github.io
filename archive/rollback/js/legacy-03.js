@@ -126,6 +126,14 @@ function savePackingSettings(){
 
     savePackingCosts();
 
+    if(typeof sellerBooksRecordTodayPackingSnapshot === "function"){
+        sellerBooksRecordTodayPackingSnapshot();
+    }
+
+    if(typeof sellerBooksRefreshReportViewsAfterMasterChange==="function"){
+        sellerBooksRefreshReportViewsAfterMasterChange();
+    }
+
     closePackingModal();
 
     sellerBooksAlert(
