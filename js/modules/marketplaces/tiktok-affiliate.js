@@ -138,8 +138,8 @@ window.sellerBooksReconcileMissingTikTokAffiliate = async function(){
             if(typeof sellerBooksAlert==="function"){
                 const en=typeof sellerBooksCurrentLanguage==="function"&&sellerBooksCurrentLanguage()==="en";
                 sellerBooksAlert(
-                    (en?"No TikTok affiliate amounts could be recovered.\\n":"Belum ada biaya affiliate TikTok yang berhasil ditemukan.\\n")+
-                    failed.join("\\n"),
+                    (en?"No TikTok affiliate amounts could be recovered.\n":"Belum ada biaya affiliate TikTok yang berhasil ditemukan.\n")+
+                    failed.join("\n"),
                     en?"Affiliate repair needs attention":"Affiliate belum ditemukan"
                 );
             }
@@ -186,8 +186,8 @@ window.sellerBooksReconcileMissingTikTokAffiliate = async function(){
             const en=typeof sellerBooksCurrentLanguage==="function"&&sellerBooksCurrentLanguage()==="en";
             sellerBooksAlert(
                 en
-                    ? "TikTok affiliate repair saved: "+updated+" order(s)."+(failed.length?"\\nStill unavailable: "+failed.join(", "):"")
-                    : "Perbaikan biaya affiliate TikTok berhasil disimpan untuk "+updated+" order."+(failed.length?"\\nMasih belum tersedia: "+failed.join(", "):""),
+                    ? "TikTok affiliate repair saved: "+updated+" order(s)."+(failed.length?"\nStill unavailable: "+failed.join(", "):"")
+                    : "Perbaikan biaya affiliate TikTok berhasil disimpan untuk "+updated+" order."+(failed.length?"\nMasih belum tersedia: "+failed.join(", "):""),
                 en?"Affiliate repair":"Perbaikan Affiliate"
             );
         }
