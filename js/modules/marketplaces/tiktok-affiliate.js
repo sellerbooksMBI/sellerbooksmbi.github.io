@@ -5,8 +5,7 @@
 ========================================================= */
 window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime, storeId){
     const order=String(orderId||"").trim();
-    const createTime=Number(orderCreateTime||0);
-    if(!order || !createTime) throw new Error("Order ID dan waktu pembuatan wajib tersedia.");
+    if(!order) throw new Error("Order ID wajib tersedia.");
 
     const store=(Array.isArray(stores)?stores:[]).find(function(item){
         if(String(item.id)!==String(storeId||"")) return false;
@@ -34,8 +33,7 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
         body:JSON.stringify({
             connection_id:String(connection.id),
             store_id:String(store.id),
-            order_id:order,
-            order_create_time:createTime
+            order_id:order
         })
     });
     const result=await response.json().catch(function(){return {};});
