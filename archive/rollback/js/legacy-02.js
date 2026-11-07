@@ -332,6 +332,31 @@ function sellerBooksSnapshotSkuKey(sku){
     return String(sku || "").trim().toLowerCase();
 }
 
+function sellerBooksGetDailyPackingSnapshot(reportDate){
+    if(typeof sellerBooksStorage === "undefined") return null;
+    const date = String(reportDate || "").slice(0,10);
+    if(!date) return null;
+    const state = sellerBooksReadDailySnapshots();
+    const day = state && state.days ? state.days[date] : null;
+    if(!day || day.packingCostPerOrder === undefined || day.packingCostPerOrder === null) return null;
+    const value = Number(day.packingCostPerOrder);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function sellerBooksRecordTodayPackingSnapshot(){
+    if(typeof sellerBooksStorage === "undefined" || typeof getPackingCostPerOrder !== "function") return;
+    const today = getIndonesiaTodayKey();
+    if(!today) return;
+    const state = sellerBooksReadDailySnapshots();
+    state.version = 1;
+    if(!state.days[today]) state.days[today] = {locked:false,products:{},stores:{}};
+    const day = state.days[today];
+    if(day.locked) return;
+    day.packingCostPerOrder = Number(getPackingCostPerOrder()) || 0;
+    day.packingCapturedAt = new Date().toISOString();
+    sellerBooksWriteDailySnapshots(state);
+}
+
 function sellerBooksEnsureTodaySnapshot(){
     if(typeof sellerBooksStorage === "undefined") return;
     const today = getIndonesiaTodayKey();
@@ -351,6 +376,11 @@ function sellerBooksEnsureTodaySnapshot(){
     if(day.locked) return;
 
     let changed = false;
+    if(day.packingCostPerOrder === undefined || day.packingCostPerOrder === null){
+        day.packingCostPerOrder = Number(getPackingCostPerOrder()) || 0;
+        day.packingCapturedAt = new Date().toISOString();
+        changed = true;
+    }
 
     let currentProducts = [];
     try{
@@ -909,9 +939,10 @@ async function deleteReportsByDateRange(){
         return;
     }
 
+    const deletedImportSet = new Set(deletedImports);
     const remaining =
         imports.filter(function(record){
-            return !deletedImports.includes(record);
+            return !deletedImportSet.has(record);
         });
 
     const fromText = fromValue.split("-").reverse().join("/");
@@ -968,6 +999,7 @@ async function deleteReportsByDateRange(){
         "sellerbooks_sales_imports",
         JSON.stringify(remaining)
     );
+    sellerBooksInvalidateSalesReportCaches();
 
     updateReports();
 
@@ -1013,6 +1045,36 @@ async function deleteReportsByDateRange(){
 
 /* PATCH L: cache hasil filter transaksi Laporan dan hasil agregasi Rincian.
    Cache hanya berlaku selama sumber transaksi dan filter tetap sama. */
+/* Cache Master Produk untuk render laporan.
+   Kunci memakai isi storage mentah agar perubahan dari jalur penyimpanan
+   mana pun otomatis menghasilkan cache baru tanpa mengubah aturan bisnis. */
+let sellerBooksReportMasterProductsCacheSource = null;
+let sellerBooksReportMasterProductsCache = [];
+
+function getSellerBooksReportMasterProducts(){
+    let source = "[]";
+    try{
+        source = sellerBooksStorage.getItem("sellerbooks_products") || "[]";
+    }catch(error){
+        return [];
+    }
+
+    if(source === sellerBooksReportMasterProductsCacheSource){
+        return sellerBooksReportMasterProductsCache;
+    }
+
+    sellerBooksReportMasterProductsCacheSource = source;
+    try{
+        const parsed = JSON.parse(source);
+        sellerBooksReportMasterProductsCache =
+            Array.isArray(parsed) ? parsed : [];
+    }catch(error){
+        sellerBooksReportMasterProductsCache = [];
+    }
+
+    return sellerBooksReportMasterProductsCache;
+}
+
 let sellerBooksReportFilteredTransactionsCache = {
     sourceTransactions:null,
     key:"",
@@ -1024,6 +1086,32 @@ let sellerBooksProductAnalysisRowsCache = {
     key:"",
     rows:null
 };
+
+/* Invalidate every derived view after the underlying import array changes.
+   This is essential because imports can be mutated in place (push/filter),
+   so reference-based caches alone cannot detect the new contents. */
+function sellerBooksInvalidateSalesReportCaches(){
+    sellerBooksPackingUnitLookupCache = {
+        imports:null,
+        unitByTransaction:null,
+        unitByPacking:null
+    };
+    sellerBooksSalesImportsCacheSource = null;
+    sellerBooksSalesImportsCache = null;
+    sellerBooksReportTransactionsCacheImports = null;
+    sellerBooksReportTransactionsCache = null;
+    sellerBooksReportFilteredTransactionsCache = {
+        sourceTransactions:null,
+        key:"",
+        transactions:null
+    };
+    sellerBooksProductAnalysisRowsCache = {
+        sourceTransactions:null,
+        key:"",
+        rows:null
+    };
+}
+
 
 function getFilteredReportTransactions(){
 
@@ -1254,7 +1342,9 @@ function getFilteredReportTransactions(){
 function renderReportSalesSummary(){
 
     const transactions =
-        getFilteredReportTransactions();
+        Array.isArray(options.transactions)
+            ? options.transactions
+            : getFilteredReportTransactions();
 
 
     /* =====================================================
@@ -1343,28 +1433,8 @@ function renderReportSalesSummary(){
        LOAD MASTER PRODUK
     ===================================================== */
 
-    let masterProducts = [];
-
-    try{
-
-        masterProducts =
-            JSON.parse(
-                sellerBooksStorage.getItem(
-                    "sellerbooks_products"
-                ) || "[]"
-            );
-
-    }
-    catch(error){
-
-        console.error(
-            "Gagal membaca Master Produk:",
-            error
-        );
-
-        masterProducts = [];
-
-    }
+    const masterProducts =
+        getSellerBooksReportMasterProducts();
 
 
     /* =====================================================
@@ -1963,7 +2033,8 @@ function getReportStoresData(){
    karena packing sudah dihitung terpisah
 ========================================================= */
 
-function getReportOtherCosts(){
+function getReportOtherCosts(options){
+    options = options || {};
 
     let costsData = [];
 
@@ -1975,14 +2046,15 @@ function getReportOtherCosts(){
         costsData = [];
     }
 
-    const period =
-        document.getElementById("reportPeriod")?.value || "month";
-
+    const period = options.period || document.getElementById("reportPeriod")?.value || "month";
     const marketplaceId =
-        document.getElementById("reportMarketplace")?.value || "all";
-
+        options.marketplaceId !== undefined
+            ? options.marketplaceId
+            : (document.getElementById("reportMarketplace")?.value || "all");
     const storeId =
-        document.getElementById("reportStore")?.value || "all";
+        options.storeId !== undefined
+            ? options.storeId
+            : (document.getElementById("reportStore")?.value || "all");
 
     let total = 0;
     costsData.forEach(function(cost){
@@ -2041,7 +2113,8 @@ function getReportOtherCosts(){
 
 function getReportOtherCostsByScope(
     marketplaceId,
-    storeId
+    storeId,
+    periodOverride
 ){
 
     let costsData = [];
@@ -2054,8 +2127,7 @@ function getReportOtherCostsByScope(
         costsData = [];
     }
 
-    const period =
-        document.getElementById("reportPeriod")?.value || "month";
+    const period = periodOverride || document.getElementById("reportPeriod")?.value || "month";
 
     let total = 0;
 
@@ -2274,7 +2346,7 @@ function getReportTransactionPrice(transaction){
     return product ? (Number(product.price) || 0) : 0;
 }
 
-function getReportTransactionFeePercent(transaction){
+function getReportTransactionBaseFeePercent(transaction){
 
     /*
        SNAPSHOT HARIAN — ADMIN FEE
@@ -2498,6 +2570,16 @@ function getReportTransactionFeePercent(transaction){
    HITUNG PACKING DARI TRANSAKSI
 ========================================================= */
 
+
+/* Affiliate is an order-level fixed amount, added once to the existing SKU/store admin fee. */
+function getReportTransactionFeePercent(transaction){
+    const basePercent=getReportTransactionBaseFeePercent(transaction);
+    const affiliateAmount=Math.max(0,Number(transaction && transaction.affiliateCommissionAmount)||0);
+    if(affiliateAmount<=0) return basePercent;
+    const salesAmount=getReportTransactionSalesAmount(transaction);
+    return salesAmount>0 ? basePercent+(affiliateAmount/salesAmount*100) : basePercent;
+}
+
 function calculateReportPacking(transactions){
 
     const packingSet =
@@ -2558,13 +2640,108 @@ function calculateReportPacking(transactions){
    HITUNG KEUANGAN UTAMA
 ========================================================= */
 
-function calculateReportFinancial(){
+let sellerBooksPackingUnitLookupCache = {
+    imports:null,
+    unitByTransaction:null,
+    unitByPacking:null
+};
+
+function sellerBooksGetPackingUnitLookups(){
+    const imports = getSalesImportsData();
+    if(sellerBooksPackingUnitLookupCache.imports === imports &&
+       sellerBooksPackingUnitLookupCache.unitByTransaction &&
+       sellerBooksPackingUnitLookupCache.unitByPacking){
+        return sellerBooksPackingUnitLookupCache;
+    }
+
+    const unitByTransaction = new Map();
+    const unitByPacking = new Map();
+    imports.forEach(function(importRecord){
+        const unit = Number(importRecord && importRecord.packingCostPerOrder);
+        if(!Number.isFinite(unit) || unit < 0) return;
+        (Array.isArray(importRecord.transactions) ? importRecord.transactions : []).forEach(function(item){
+            if(typeof sellerBooksGetSalesImportIdentity === "function"){
+                const identity = sellerBooksGetSalesImportIdentity(item);
+                if(identity) unitByTransaction.set(identity, unit);
+            }
+            const packingId = String(item.packingId || item.orderId || "").trim().toLowerCase();
+            if(!packingId) return;
+            const marketplaceId = String(item.marketplaceId || importRecord.marketplaceId || "").trim().toLowerCase();
+            const storeId = String(item.storeId || importRecord.storeId || "").trim().toLowerCase();
+            unitByPacking.set(marketplaceId + "|" + storeId + "|" + packingId, unit);
+        });
+    });
+
+    sellerBooksPackingUnitLookupCache = {
+        imports:imports,
+        unitByTransaction:unitByTransaction,
+        unitByPacking:unitByPacking
+    };
+    return sellerBooksPackingUnitLookupCache;
+}
+
+function calculateReportPackingCost(transactions, packingCount){
+    const list = Array.isArray(transactions) ? transactions : [];
+    const lookups = sellerBooksGetPackingUnitLookups();
+    const unitByTransaction = lookups.unitByTransaction;
+    const unitByPacking = lookups.unitByPacking;
+
+    const costByPacking = new Map();
+    list.forEach(function(item){
+        const packingId = String(item.packingId || item.orderId || "").trim();
+        const key = String(item.marketplaceId || "").trim().toLowerCase() + "|" +
+            String(item.storeId || "").trim().toLowerCase() + "|" + packingId.toLowerCase();
+        if(costByPacking.has(key)) return;
+
+        /*
+         * Biaya packing wajib ditentukan per tanggal transaksi, bukan dari
+         * periode laporan atau nilai global saat ini.
+         * Hari ini selalu LIVE; tanggal sebelum hari ini selalu memakai
+         * snapshot harian yang sudah dibekukan.
+         */
+        const historical = !isReportTransactionToday(item);
+        let unit = NaN;
+
+        if(!historical){
+            unit = Number(getPackingCostPerOrder()) || 0;
+        }else{
+            const reportDate = item.reportDate || item.importedAt || item.transactionDate;
+            const dailyPacking = sellerBooksGetDailyPackingSnapshot(reportDate);
+            if(dailyPacking !== null){
+                unit = dailyPacking;
+            }else if(item.packingCostPerOrderSnapshot !== undefined &&
+                     item.packingCostPerOrderSnapshot !== null &&
+                     item.packingCostPerOrderSnapshot !== ""){
+                unit = Number(item.packingCostPerOrderSnapshot);
+            }else if(typeof sellerBooksGetSalesImportIdentity === "function"){
+                const identity = sellerBooksGetSalesImportIdentity(item);
+                if(identity && unitByTransaction.has(identity)){
+                    unit = unitByTransaction.get(identity);
+                }
+            }
+            if(!Number.isFinite(unit) && unitByPacking.has(key)){
+                unit = unitByPacking.get(key);
+            }
+            if(!Number.isFinite(unit) || unit < 0) unit = 0;
+        }
+
+        costByPacking.set(key, unit);
+    });
+    let total = 0;
+    costByPacking.forEach(function(unit){ total += unit; });
+    return total;
+}
+
+function calculateReportFinancial(options){
+    options = options || {};
 
     const financialStart =
         performance.now();
 
     const transactions =
-        getFilteredReportTransactions();
+        Array.isArray(options.transactions)
+            ? options.transactions
+            : getFilteredReportTransactions();
 
 
     let totalSales = 0;
@@ -2576,30 +2753,8 @@ function calculateReportFinancial(){
     let totalAdmin = 0;
 
 
-    const masterProducts = [];
-
-    try{
-
-        const data =
-            JSON.parse(
-                sellerBooksStorage.getItem(
-                    "sellerbooks_products"
-                ) || "[]"
-            );
-
-        if(
-            Array.isArray(data)
-        ){
-
-            data.forEach(function(product){
-
-                masterProducts.push(product);
-
-            });
-
-        }
-
-    }catch(error){}
+    const masterProducts =
+        getSellerBooksReportMasterProducts();
 
 
     const productMap =
@@ -2704,13 +2859,13 @@ function calculateReportFinancial(){
         );
 
 
-    const packingUnit =
-        getPackingCostPerOrder();
-
-
+    /*
+       Biaya packing historis mengikuti nilai yang tersimpan
+       pada record Import Penjualan, bukan pengaturan terbaru.
+       Data lama tanpa snapshot tetap memakai fallback biaya aktif.
+    */
     const totalPacking =
-        packingCount *
-        packingUnit;
+        calculateReportPackingCost(transactions, packingCount);
 
 
     /*
@@ -2737,7 +2892,11 @@ function calculateReportFinancial(){
     */
 
     const otherCosts =
-        getReportOtherCosts();
+        getReportOtherCosts({
+            period: options.period,
+            marketplaceId: options.marketplaceId,
+            storeId: options.storeId
+        });
 
 
     /*
@@ -3033,11 +3192,13 @@ function renderReportMarketplaceTable(){
                     qty:0,
                     admin:0,
                     hpp:0,
-                    packingIds:new Set()
+                    packingIds:new Set(),
+                    transactions:[]
                 });
             }
 
             const group = groups.get(marketplaceId);
+            group.transactions.push(item);
             const sales = getReportTransactionSalesAmount(item);
             const qty = Number(item.qty) || 0;
 
@@ -3065,7 +3226,7 @@ function renderReportMarketplaceTable(){
 
         groups.forEach(function(group){
             const netSales = group.sales - group.admin;
-            const packingCost = group.packingIds.size * getPackingCostPerOrder();
+            const packingCost = calculateReportPackingCost(group.transactions, group.packingIds.size);
 
             const otherCosts = getReportOtherCostsByScope(
                 group.marketplaceId,
@@ -3127,11 +3288,13 @@ function renderReportStoreTable(){
                     qty:0,
                     admin:0,
                     hpp:0,
-                    packingIds:new Set()
+                    packingIds:new Set(),
+                    transactions:[]
                 });
             }
 
             const group = groups.get(storeId);
+            group.transactions.push(item);
             const sales = getReportTransactionSalesAmount(item);
             const qty = Number(item.qty) || 0;
 
@@ -3155,7 +3318,7 @@ function renderReportStoreTable(){
 
         groups.forEach(function(group){
             const netSales = group.sales - group.admin;
-            const packingCost = group.packingIds.size * getPackingCostPerOrder();
+            const packingCost = calculateReportPackingCost(group.transactions, group.packingIds.size);
 
             const otherCosts = getReportOtherCostsByScope(
                 "all",
@@ -3471,9 +3634,7 @@ async function deleteSelectedReportTransactions(){
     });
     sellerBooksStorage.setItem("sellerbooks_sales_imports",JSON.stringify(remainingImports));
     selectedReportTransactionKeys.clear();
-    sellerBooksReportTransactionsCacheImports=null;sellerBooksReportTransactionsCache=null;
-    sellerBooksReportFilteredTransactionsCache={sourceTransactions:null,key:"",transactions:null};
-    sellerBooksProductAnalysisRowsCache={sourceTransactions:null,key:"",rows:null};
+    sellerBooksInvalidateSalesReportCaches();
     updateReports();
     const en=sellerBooksCurrentLanguage()==="en";
     try{
@@ -4489,6 +4650,15 @@ function renderReportSoldProductTable(){
 ========================================================= */
 
 function updateReports(){
+    /* Repair previously imported TikTok orders whose affiliate fee was
+       unavailable during the original pull. The repair changes only the
+       affiliate amount field and persists it through the strict cloud path. */
+    if(typeof window.sellerBooksReconcileMissingTikTokAffiliate==="function"){
+        window.sellerBooksReconcileMissingTikTokAffiliate().catch(function(error){
+            console.warn("SellerBooks: rekonsiliasi affiliate TikTok lama belum selesai:",error);
+        });
+    }
+
 
     const reportProfiler =
         window.sellerBooksReportProfiler;
