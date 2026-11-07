@@ -169,6 +169,15 @@ window.sellerBooksReconcileMissingTikTokAffiliate = async function(){
         }else if(typeof updateReports==="function"){
             updateReports();
         }
+        if(typeof sellerBooksAlert==="function"){
+            const en=typeof sellerBooksCurrentLanguage==="function"&&sellerBooksCurrentLanguage()==="en";
+            sellerBooksAlert(
+                en
+                    ? "TikTok affiliate repair saved: "+updated+" order(s)."+(failed.length?"\\nStill unavailable: "+failed.join(", "):"")
+                    : "Perbaikan biaya affiliate TikTok berhasil disimpan untuk "+updated+" order."+(failed.length?"\\nMasih belum tersedia: "+failed.join(", "):""),
+                en?"Affiliate repair":"Perbaikan Affiliate"
+            );
+        }
         return {checked:pending.size,updated:updated,failed:failed};
     })();
     try{
