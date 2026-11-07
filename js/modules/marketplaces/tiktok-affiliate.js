@@ -143,5 +143,5 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
     });
     if(typeof sellerBooksRefreshActiveViewAfterSalesImport==="function")sellerBooksRefreshActiveViewAfterSalesImport();
     else if(typeof updateReports==="function")updateReports();
-    return {checked:pending.length,found:found,zero:pending.length-found,failed:failed,updated:updated};
+    return {checked:pending.length,found:found,zero:Math.max(0,pending.length-found-failed),failed:failed,updated:updated};
 };
