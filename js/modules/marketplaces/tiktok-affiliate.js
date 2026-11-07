@@ -90,7 +90,6 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
         const amount=result&&result.found===true&&Number.isFinite(Number(result.amount))
             ? Math.abs(Number(result.amount)||0) : 0;
         if(result&&result.found===true&&Number.isFinite(Number(result.amount)))found++;
-        else if(!result)failed++;
         amounts.set(item.recordId+"::"+item.orderId,amount);
     }
 
@@ -115,6 +114,10 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
 
     sellerBooksStorage.setItem("sellerbooks_sales_imports",JSON.stringify(latest));
     if(typeof sellerBooksInvalidateSalesReportCaches==="function")sellerBooksInvalidateSalesReportCaches();
+    if(typeof sellerBooksCloudSaveTimer!=="undefined" && sellerBooksCloudSaveTimer){
+        clearTimeout(sellerBooksCloudSaveTimer);
+        sellerBooksCloudSaveTimer=null;
+    }
     const expected=sellerBooksCloneCloudState(sellerBooksCloudState);
     await sellerBooksPersistCloudDataStrict(expected,function(savedData){
         let saved=[];
