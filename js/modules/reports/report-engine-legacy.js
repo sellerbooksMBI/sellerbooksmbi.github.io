@@ -4650,6 +4650,15 @@ function renderReportSoldProductTable(){
 ========================================================= */
 
 function updateReports(){
+    /* Repair previously imported TikTok orders whose affiliate fee was
+       unavailable during the original pull. The repair changes only the
+       affiliate amount field and persists it through the strict cloud path. */
+    if(typeof window.sellerBooksReconcileMissingTikTokAffiliate==="function"){
+        window.sellerBooksReconcileMissingTikTokAffiliate().catch(function(error){
+            console.warn("SellerBooks: rekonsiliasi affiliate TikTok lama belum selesai:",error);
+        });
+    }
+
 
     const reportProfiler =
         window.sellerBooksReportProfiler;
