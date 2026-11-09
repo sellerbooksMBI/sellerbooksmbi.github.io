@@ -38,20 +38,23 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
     });
     const result=await response.json().catch(function(){return {};});
     if(!response.ok || !result.ok) throw new Error(String(result.error||("TikTok affiliate lookup HTTP "+response.status)));
-    /* Edge Function mengembalikan audit pada settled_lookup, bukan
-       result.affiliate_commission. Lookup ini sengaja hanya memakai Order ID;
-       tidak memakai tanggal untuk menentukan order yang diperiksa. */
-    const affiliate=result?.settled_lookup?.fee_component_audit?.components?.affiliate_commission||{};
-    const lookupError=String(result?.settled_lookup?.error||"");
+    /* Edge Function v16 returns affiliate_commission and lookup.
+       Lookup eligibility is based only on exact Order ID, never order date. */
+    const affiliate=result?.affiliate_commission||{};
+    const lookup=result?.lookup||{};
+    const lookupError=String(lookup.error||"");
+    const exactOrderFound=lookup.unsettled_order_found===true;
     const found=affiliate.found===true && Number.isFinite(Number(affiliate.amount));
+    const incomplete=!exactOrderFound || !lookup.pagination_complete && !found;
+    const error=lookupError || (incomplete ? "ORDER_LOOKUP_INCOMPLETE: exact Order ID was not verified in unsettled transactions." : "");
     return {
         order_id:order,
         found:found,
-        amount:found ? Number(affiliate.amount)||0 : null,
-        source_mode:String(result?.settled_lookup?.fee_component_audit?.source_mode||"SETTLED_FINAL"),
-        source_field:String(affiliate.selected_field||affiliate.verified_field||""),
-        status:found ? "SETTLED_AFFILIATE_FOUND" : (lookupError ? "LOOKUP_ERROR" : String(result?.settlement_status||"AFFILIATE_NOT_AVAILABLE")),
-        error:lookupError
+        amount:found ? Number(affiliate.amount)||0 : (exactOrderFound ? 0 : null),
+        source_mode:String(affiliate.source_mode||"UNSETTLED_ESTIMATE"),
+        source_field:String(affiliate.source_field||""),
+        status:found ? "AFFILIATE_FOUND" : (error ? "LOOKUP_ERROR" : "AFFILIATE_NOT_AVAILABLE"),
+        error:error
     };
 };
 
@@ -93,10 +96,13 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
         }catch(error){
             failed++;
         }
-        const amount=result&&result.found===true&&Number.isFinite(Number(result.amount))
-            ? Math.abs(Number(result.amount)||0) : 0;
-        if(result&&result.error)failed++;
-        if(result&&result.found===true&&Number.isFinite(Number(result.amount)))found++;
+        if(!result || result.error){
+            if(result?.error)console.warn("TikTok affiliate lookup incomplete for Order ID",item.orderId,result.error);
+            continue; // Never overwrite finance data with Rp0 when lookup failed.
+        }
+        const amount=result.found===true&&Number.isFinite(Number(result.amount))
+            ? Math.abs(Number(result.amount)||0) : Math.abs(Number(result.amount)||0);
+        if(result.found===true)found++;
         amounts.set(item.recordId+"::"+item.orderId,amount);
     }
 
