@@ -97,7 +97,10 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             failed++;
         }
         if(!result || result.error){
-            if(result?.error)console.warn("TikTok affiliate lookup incomplete for Order ID",item.orderId,result.error);
+            if(result?.error){
+                failed++;
+                console.warn("TikTok affiliate lookup incomplete for Order ID",item.orderId,result.error);
+            }
             continue; // Never overwrite finance data with Rp0 when lookup failed.
         }
         const amount=Math.abs(Number(result.amount)||0);
