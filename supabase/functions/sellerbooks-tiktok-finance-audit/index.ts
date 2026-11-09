@@ -220,6 +220,26 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
       "TikTok fee_and_tax_amount excludes logistics in this reconciliation; logistics is shown separately and included in the seven-component total.",
       "Unsettled values are estimates; settled statement values are final."],
   };
+
+};
+
+/* Convert the existing seven-component Finance audit into the affiliate-only
+   result consumed by the frontend. This uses the same verified field mapping
+   as the original Finance audit and never invents a zero for a missing field. */
+const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETTLED_FINAL") => {
+  const audit = buildTikTokFeeAudit(data, sourceMode);
+  const component = audit?.components?.affiliate_commission;
+  return {
+    found: component?.found === true,
+    amount: component?.found === true ? Math.abs(Number(component.amount) || 0) : null,
+    source_field: String(component?.selected_field || ""),
+    diagnostic: {
+      occurrences: Number(component?.occurrences || 0),
+      paths: Array.isArray(component?.paths) ? component.paths : [],
+      readiness: String(audit?.readiness || "UNKNOWN"),
+      missing_components: audit?.admin_marketplace_total?.missing_components || [],
+    },
+  };
 };
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -321,7 +341,7 @@ Deno.serve(async (req: Request) => {
         "/finance/202501/orders/" + encodeURIComponent(orderId) + "/statement_transactions",
         {},
       );
-      settledAffiliate = extractAffiliateCommission(settledPayload?.data ?? {});
+      settledAffiliate = extractAffiliateCommission(settledPayload?.data ?? {}, "SETTLED_FINAL");
     } catch (error) {
       settledError = error instanceof Error ? error.message : String(error);
     }
@@ -407,7 +427,7 @@ Deno.serve(async (req: Request) => {
         statementLookup.pagination_complete = statementListComplete;
         if (!statementListComplete) statementLookup.list_pagination_truncated = true;
         if (matchingRows.length) {
-          statementAffiliate = extractAffiliateCommission({ transactions: matchingRows });
+          statementAffiliate = extractAffiliateCommission({ transactions: matchingRows }, "SETTLED_FINAL");
         }
       } catch (error) {
         statementError = error instanceof Error ? error.message : String(error);
@@ -451,7 +471,7 @@ Deno.serve(async (req: Request) => {
           String(row?.order_id || "").trim() === orderId
         ) || unsettledMatch;
         if (unsettledMatch) {
-          unsettledAffiliate = extractAffiliateCommission(unsettledMatch);
+          unsettledAffiliate = extractAffiliateCommission(unsettledMatch, "UNSETTLED_ESTIMATE");
           unsettledComplete = true;
           break;
         }
