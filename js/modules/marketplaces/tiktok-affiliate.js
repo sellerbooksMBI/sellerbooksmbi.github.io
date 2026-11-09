@@ -45,7 +45,7 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
     const lookupError=String(lookup.error||"");
     const exactOrderFound=lookup.unsettled_order_found===true;
     const found=affiliate.found===true && Number.isFinite(Number(affiliate.amount));
-    const incomplete=!exactOrderFound || !lookup.pagination_complete && !found;
+    const incomplete=!exactOrderFound;
     const error=lookupError || (incomplete ? "ORDER_LOOKUP_INCOMPLETE: exact Order ID was not verified in unsettled transactions." : "");
     return {
         order_id:order,
@@ -100,8 +100,7 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             if(result?.error)console.warn("TikTok affiliate lookup incomplete for Order ID",item.orderId,result.error);
             continue; // Never overwrite finance data with Rp0 when lookup failed.
         }
-        const amount=result.found===true&&Number.isFinite(Number(result.amount))
-            ? Math.abs(Number(result.amount)||0) : Math.abs(Number(result.amount)||0);
+        const amount=Math.abs(Number(result.amount)||0);
         if(result.found===true)found++;
         amounts.set(item.recordId+"::"+item.orderId,amount);
     }
