@@ -253,7 +253,16 @@ async function syncTikTokOrdersNowInternal(storeId){
                         if(item.status==="CONFIRMED_ZERO"){
                             return id+": Rp0 terkonfirmasi ("+String(item.source_field||"field tidak diketahui")+")";
                         }
-                        return id+": BELUM TERKONFIRMASI - "+String(item.error||item.status||"pending");
+                        const d=item.lookup_diagnostic||{};
+                        const feeKeys=Array.isArray(d.unsettled_first_fee_keys)?d.unsettled_first_fee_keys.join(","):"";
+                        const stmtKeys=Array.isArray(d.statement_first_fee_keys)?d.statement_first_fee_keys.join(","):"";
+                        return id+": BELUM TERKONFIRMASI - "+String(item.error||item.status||"pending")+
+                            "\n  Unsettled: total="+String(d.unsettled_total_count??"?")+
+                            ", halaman="+String(d.unsettled_pages_scanned??"?")+
+                            ", ID contoh="+String(d.unsettled_first_order_id??"-")+
+                            ", field fee="+(feeKeys||"-")+
+                            "\n  Statement: SKU="+String(d.statement_sku_count??"?")+
+                            ", field fee="+(stmtKeys||"-");
                     }).join("\n");
                     sellerBooksAlert(
                         (en
