@@ -856,22 +856,66 @@ async function saveProduct(){
 
 
     /*
-       SIMPAN LOKAL TERLEBIH DAHULU.
-       Ini tetap memakai mekanisme penyimpanan yang sudah ada.
+       Simpan perubahan Master Produk dan pastikan benar-benar tersimpan
+       di Supabase sebelum menyatakan proses selesai. Jangan fire-and-forget:
+       jika cloud belum mengonfirmasi, perubahan bisa kembali saat refresh.
     */
-    saveProductData();
+    saveProductData({deferCloudPersist:true});
 
-    /*
-       TUTUP MODAL SEGERA.
-       Jangan menunggu proses Supabase selesai karena proses jaringan
-       sebelumnya membuat tombol Simpan terasa lambat/lemot.
-    */
+    try{
+        if(typeof sellerBooksCloudSaveTimer!=="undefined" && sellerBooksCloudSaveTimer){
+            clearTimeout(sellerBooksCloudSaveTimer);
+            sellerBooksCloudSaveTimer=null;
+        }
+
+        if(!sellerBooksAuthUser || !sellerBooksCloudReady || sellerBooksCloudLoading){
+            throw new Error("Sinkronisasi cloud belum siap. Perubahan belum dapat dikonfirmasi tersimpan.");
+        }
+
+        if(typeof sellerBooksPersistCloudDataNow!=="function" ||
+           typeof sellerBooksReadCloudRow!=="function"){
+            throw new Error("Fungsi verifikasi penyimpanan cloud tidak tersedia.");
+        }
+
+        await sellerBooksPersistCloudDataNow();
+
+        const readBack=await sellerBooksReadCloudRow();
+        if(!readBack.exists){
+            throw new Error("Data Master Produk tidak ditemukan saat verifikasi cloud.");
+        }
+
+        let savedProducts=[];
+        try{
+            const raw=readBack.data?.sellerbooks_products;
+            savedProducts=Array.isArray(raw) ? raw : JSON.parse(raw||"[]");
+        }catch(parseError){
+            throw new Error("Data Master Produk dari cloud tidak dapat diverifikasi.");
+        }
+
+        const savedProduct=savedProducts.find(function(item){
+            return String(item.id||"")===String(editingProductId||"");
+        });
+        const expectedProduct=products.find(function(item){
+            return String(item.id||"")===String(editingProductId||"");
+        });
+
+        if(!expectedProduct || !savedProduct ||
+           String(savedProduct.adminFeePercent??"")!==String(expectedProduct.adminFeePercent??"")){
+            throw new Error("Perubahan Admin % SKU belum terkonfirmasi tersimpan di cloud. Jangan refresh dulu; coba Simpan kembali.");
+        }
+
+        sellerBooksCloudBaseState=sellerBooksCloneCloudState(readBack.data);
+        sellerBooksCloudState=sellerBooksCloneCloudState(readBack.data);
+        sellerBooksCloudUpdatedAt=readBack.updatedAt;
+        sellerBooksCloudDirtyKeys?.delete("sellerbooks_products");
+    }catch(error){
+        console.error("Verifikasi penyimpanan Master Produk gagal:",error);
+        sellerBooksAlert("Perubahan belum terkonfirmasi tersimpan di cloud. Periksa koneksi lalu coba Simpan kembali. Detail: "+String(error?.message||error));
+        return;
+    }
+
     closeProductModal();
 
-    /*
-       RENDER SETELAH BROWSER SELESAI MENGGAMBAR MODAL YANG SUDAH DITUTUP.
-       Dengan begitu klik Simpan langsung terasa responsif.
-    */
     requestAnimationFrame(function(){
         renderProducts();
         renderNotifications();
@@ -879,26 +923,6 @@ async function saveProduct(){
             sellerBooksRefreshReportViewsAfterMasterChange();
         }
     });
-
-    /*
-       SINKRONISASI CLOUD TETAP DILAKUKAN, tetapi berjalan di belakang
-       tanpa menahan modal/UI. Timer lama dibatalkan agar penyimpanan
-       dimulai sekarang, bukan menunggu antrean 250ms.
-    */
-    try{
-        if(typeof sellerBooksCloudSaveTimer!=="undefined" && sellerBooksCloudSaveTimer){
-            clearTimeout(sellerBooksCloudSaveTimer);
-            sellerBooksCloudSaveTimer=null;
-        }
-
-        if(typeof sellerBooksPersistCloudDataNow==="function" &&
-           sellerBooksAuthUser &&
-           sellerBooksCloudReady){
-            sellerBooksPersistCloudDataNow();
-        }
-    }catch(error){
-        console.error("Penyimpanan Master Produk ke cloud gagal dimulai:",error);
-    }
 
 }
 
