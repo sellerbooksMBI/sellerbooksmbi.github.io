@@ -33,7 +33,8 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
         body:JSON.stringify({
             connection_id:String(connection.id),
             store_id:String(store.id),
-            order_id:order
+            order_id:order,
+            order_create_time:Number(orderCreateTime||0)
         })
     });
     const result=await response.json().catch(function(){return {};});
@@ -84,7 +85,12 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
         (record.transactions||[]).forEach(function(tx,index){
             const orderId=String(tx.orderId||"").trim();
             if(!keySet.has(orderId))return;
-            if(!perOrder.has(orderId))perOrder.set(orderId,{recordId:String(record.id||""),index:index,orderId:orderId});
+            if(!perOrder.has(orderId))perOrder.set(orderId,{
+                recordId:String(record.id||""),
+                index:index,
+                orderId:orderId,
+                orderCreateTime:Number(tx.orderCreateTime||0)
+            });
         });
         perOrder.forEach(function(item){pending.push(item);});
     });
@@ -96,7 +102,7 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
     for(const item of pending){
         let result=null;
         try{
-            result=await window.sellerBooksFetchTikTokAffiliate(item.orderId,0,storeId);
+            result=await window.sellerBooksFetchTikTokAffiliate(item.orderId,item.orderCreateTime,storeId);
         }catch(error){
             failed++;
             details.push({order_id:item.orderId,status:"FAILED",error:String(error?.message||error)});
