@@ -305,7 +305,7 @@ Deno.serve(async (req: Request) => {
     /*
      * Finance-only affiliate lookup.
      * Do not call /affiliate_seller/*: the connected app has no access to that API.
-     * Match by exact Order ID; order_create_time only narrows the Finance API window.
+     * Match by exact Order ID across the available Finance period; order_create_time is not required.
      */
     // Order ID is the only identity key for affiliate matching.
     // Do not restrict Finance lookup to order_create_time: TikTok creates the
@@ -350,8 +350,11 @@ Deno.serve(async (req: Request) => {
     let statementAffiliate: any = null;
     let statementError: string | null = null;
 
-    // Search all available statement-list pages and all detail pages until the exact Order ID is found.
-    if (!settledAffiliate?.found && orderCreateTime > 0) {
+    // Search statement pages by the full available Finance period, matching exact Order ID.
+    // The order's creation timestamp is optional and must never block affiliate lookup.
+    const statementWindowStart = 1735689600; // 2025-01-01 UTC
+    const statementWindowEnd = Math.floor(Date.now() / 1000) + 1;
+    if (!settledAffiliate?.found) {
       statementLookup.attempted = true;
       try {
         let statementPageToken = "";
@@ -360,8 +363,8 @@ Deno.serve(async (req: Request) => {
         const maxStatementPages = 100;
         for (let page = 0; page < maxStatementPages; page++) {
           const query: Record<string, string> = {
-            statement_time_ge: String(windowStart),
-            statement_time_lt: String(now + 1),
+            statement_time_ge: String(statementWindowStart),
+            statement_time_lt: String(statementWindowEnd),
             sort_field: "statement_time",
             sort_order: "ASC",
             page_size: "100",
@@ -429,8 +432,6 @@ Deno.serve(async (req: Request) => {
         statementError = error instanceof Error ? error.message : String(error);
         statementLookup.error = statementError;
       }
-    } else if (!orderCreateTime) {
-      statementLookup.error = "ORDER_CREATE_TIME_REQUIRED_FOR_STATEMENT_LOOKUP";
     }
 
     let unsettledMatch: any = null;
