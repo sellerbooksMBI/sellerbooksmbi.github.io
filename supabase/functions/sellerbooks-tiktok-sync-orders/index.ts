@@ -251,10 +251,17 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
     }
   }
   if(!rows.length) return {connection_id:c.id,store_id:c.store_id,status:"NO_ORDERS",orders_found:found.length,rows_found:0};
+  const financeOrders=found.map((order:any)=>{
+    const rawTime=Number(order?.create_time??order?.created_time??order?.order_create_time??0);
+    const orderCreateTime=Number.isFinite(rawTime)
+      ? Math.floor(rawTime>1000000000000?rawTime/1000:rawTime)
+      : 0;
+    return {order_id:oid(order),order_create_time:orderCreateTime};
+  }).filter((item:any)=>!!item.order_id);
   const queued=await enqueueTikTokExcelPayload(c,rows,found.length,sk);
   const now=new Date().toISOString();
   await rest(sk,"sellerbooks_api_connections?id=eq."+encodeURIComponent(c.id),{method:"PATCH",body:JSON.stringify({last_sync_at:now,last_success_at:now,last_error:null,updated_at:now})});
-  return {connection_id:c.id,store_id:c.store_id,status:"RAW_FILE_READY",orders_found:found.length,rows_found:rows.length,queue_id:queued.queue_id,file_name:queued.file_name,engine:"SELLERBOOKS_IMPORT_PENJUALAN"};
+  return {connection_id:c.id,store_id:c.store_id,status:"RAW_FILE_READY",orders_found:found.length,rows_found:rows.length,queue_id:queued.queue_id,file_name:queued.file_name,finance_orders:financeOrders,engine:"SELLERBOOKS_IMPORT_PENJUALAN"};
 }
 Deno.serve(async req=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:CORS});
