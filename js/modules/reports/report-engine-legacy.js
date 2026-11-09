@@ -2506,16 +2506,25 @@ function getReportTransactionBaseFeePercent(transaction){
 
         if(masterProduct){
 
-            const masterSkuFee =
+            const hasMasterSkuFee =
                 masterProduct.adminFeePercent !== undefined &&
                 masterProduct.adminFeePercent !== null &&
-                masterProduct.adminFeePercent !== ""
-                    ? Number(masterProduct.adminFeePercent)
-                    : NaN;
+                String(masterProduct.adminFeePercent).trim() !== "";
 
-            if(Number.isFinite(masterSkuFee)){
-                return masterSkuFee;
+            if(hasMasterSkuFee){
+                const masterSkuFee = Number(masterProduct.adminFeePercent);
+                if(Number.isFinite(masterSkuFee)){
+                    return masterSkuFee;
+                }
             }
+
+            /*
+               SKU Master Produk ditemukan tetapi Admin % SKU dikosongkan:
+               untuk transaksi HARI INI langsung gunakan Admin % Akun Toko
+               terbaru. Jangan hidupkan kembali nilai SKU lama dari transaksi
+               atau snapshot import. Nilai akun 0% juga harus dianggap valid.
+            */
+            return getReportStoreFeePercent(transaction.storeId);
         }
     }
 
