@@ -89,23 +89,35 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
     if(!pending.length)return {checked:0,found:0,zero:0,failed:0};
 
     const amounts=new Map();
-    let found=0,failed=0;
+    const details=[];
+    let found=0,failed=0,zero=0;
     for(const item of pending){
         let result=null;
         try{
             result=await window.sellerBooksFetchTikTokAffiliate(item.orderId,0,storeId);
         }catch(error){
             failed++;
+            details.push({order_id:item.orderId,status:"FAILED",error:String(error?.message||error)});
             console.warn("TikTok affiliate lookup failed for Order ID",item.orderId,error);
             continue;
         }
         if(!result || result.status!=="CONFIRMED" || result.error){
             failed++;
+            details.push({order_id:item.orderId,status:"PENDING",error:String(result?.error||"No confirmed fee field")});
             if(result?.error)console.warn("TikTok affiliate lookup pending for Order ID",item.orderId,result.error);
             continue; // Missing fee data is retried later; it is not Rp0.
         }
         const amount=Math.abs(Number(result.amount)||0);
         if(amount>0)found++;
+        else zero++;
+        details.push({
+            order_id:item.orderId,
+            status:amount>0?"AFFILIATE_FOUND":"CONFIRMED_ZERO",
+            amount:amount,
+            source_mode:String(result.source_mode||""),
+            source_field:String(result.source_field||""),
+            diagnostic:result.diagnostic||{}
+        });
         amounts.set(item.recordId+"::"+item.orderId,amount);
     }
 
@@ -159,5 +171,12 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
     });
     if(typeof sellerBooksRefreshActiveViewAfterSalesImport==="function")sellerBooksRefreshActiveViewAfterSalesImport();
     else if(typeof updateReports==="function")updateReports();
-    return {checked:pending.length,found:found,zero:Math.max(0,pending.length-found-failed),failed:failed,updated:updated};
+    return {
+        checked:pending.length,
+        found:found,
+        zero:zero,
+        failed:failed,
+        updated:updated,
+        details:details
+    };
 };
