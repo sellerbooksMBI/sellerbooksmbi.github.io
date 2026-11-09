@@ -245,14 +245,25 @@ async function syncTikTokOrdersNowInternal(storeId){
                     );
                     console.info("TikTok affiliate batch result:",outcome);
                     const en=sellerBooksPullOrderIsEN();
+                    const diagnosticLines=(Array.isArray(outcome.details)?outcome.details:[]).map(function(item){
+                        const id=String(item.order_id||"");
+                        if(item.status==="AFFILIATE_FOUND"){
+                            return id+": Rp"+Number(item.amount||0).toLocaleString("id-ID")+" ("+String(item.source_field||"field tidak diketahui")+")";
+                        }
+                        if(item.status==="CONFIRMED_ZERO"){
+                            return id+": Rp0 terkonfirmasi ("+String(item.source_field||"field tidak diketahui")+")";
+                        }
+                        return id+": BELUM TERKONFIRMASI - "+String(item.error||item.status||"pending");
+                    }).join("\n");
                     sellerBooksAlert(
-                        en
-                            ? "Orders imported. Affiliate checked for "+outcome.checked+" new Order IDs; "+
-                              outcome.found+" found, "+outcome.zero+" confirmed unavailable (Rp0), and "+
-                              outcome.failed+" lookup failures."
-                            : "Order berhasil masuk. Affiliate diperiksa untuk "+outcome.checked+" Order ID baru; "+
-                              outcome.found+" ditemukan, "+outcome.zero+" dipastikan tidak tersedia (Rp0), dan "+
-                              outcome.failed+" pemeriksaan gagal.",
+                        (en
+                            ? "Orders imported. Affiliate checked for "+outcome.checked+" Order IDs; "+
+                              outcome.found+" found, "+outcome.zero+" confirmed Rp0, and "+
+                              outcome.failed+" pending/failed."
+                            : "Order berhasil masuk. Affiliate diperiksa untuk "+outcome.checked+" Order ID; "+
+                              outcome.found+" ditemukan, "+outcome.zero+" terkonfirmasi Rp0, dan "+
+                              outcome.failed+" masih pending/gagal.")+
+                        (diagnosticLines?"\n\nRincian per Order ID:\n"+diagnosticLines:""),
                         en ? "TikTok Affiliate Check Results" : "Hasil Pemeriksaan Affiliate TikTok"
                     );
                 }catch(affiliateError){
