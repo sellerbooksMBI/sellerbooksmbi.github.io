@@ -892,11 +892,16 @@ async function saveProduct(){
             throw new Error("Data Master Produk dari cloud tidak dapat diverifikasi.");
         }
 
-        const savedProduct=savedProducts.find(function(item){
-            return String(item.id||"")===String(editingProductId||"");
-        });
         const expectedProduct=products.find(function(item){
-            return String(item.id||"")===String(editingProductId||"");
+            return editingProductId
+                ? String(item.id||"")===String(editingProductId)
+                : String(item.sku||"").trim().toLowerCase()===String(sku||"").trim().toLowerCase();
+        });
+        const savedProduct=savedProducts.find(function(item){
+            if(expectedProduct && expectedProduct.id){
+                return String(item.id||"")===String(expectedProduct.id);
+            }
+            return String(item.sku||"").trim().toLowerCase()===String(sku||"").trim().toLowerCase();
         });
 
         if(!expectedProduct || !savedProduct ||
