@@ -136,10 +136,57 @@ async function syncTikTokOrdersNowInternal(storeId){
         }
 
         if(result.status==="NO_ORDERS"){
-            sellerBooksAlert(
-                sellerBooksPullOrderText("noOrders","TikTok",Number(result.orders_found||0)),
-                sellerBooksPullOrderText("resultTitle","TikTok")
-            );
+            /* Walau tidak ada order baru dari marketplace, retry Order ID
+               lama yang affiliate-nya belum terkonfirmasi. */
+            const pendingAffiliateIds=new Set();
+            try{
+                const savedImports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
+                const orderStates=new Map();
+                savedImports.forEach(function(record){
+                    if(String(record.storeId||"")!==String(store.id)||!/tiktok/i.test(String(record.marketplace||"")))return;
+                    (record.transactions||[]).forEach(function(tx){
+                        const id=String(tx.orderId||"").trim();
+                        if(!id)return;
+                        const confirmed=String(tx.affiliateCommissionStatus||"").toUpperCase()==="CONFIRMED" ||
+                            Math.abs(Number(tx.affiliateCommissionAmount)||0)>0;
+                        if(confirmed)orderStates.set(id,true);
+                        else if(!orderStates.has(id))orderStates.set(id,false);
+                    });
+                });
+                orderStates.forEach(function(confirmed,id){if(!confirmed)pendingAffiliateIds.add(id);});
+            }catch(storageError){
+                console.warn("Tidak dapat membaca antrean affiliate pending:",storageError);
+            }
+
+            if(pendingAffiliateIds.size && typeof window.sellerBooksApplyTikTokAffiliateForImportedOrders==="function"){
+                try{
+                    const outcome=await window.sellerBooksApplyTikTokAffiliateForImportedOrders(
+                        String(store.id),Array.from(pendingAffiliateIds)
+                    );
+                    const en=sellerBooksPullOrderIsEN();
+                    sellerBooksAlert(
+                        en
+                            ? "No new orders. Retried affiliate for "+outcome.checked+" pending Order IDs; "+
+                              outcome.found+" fees found, "+outcome.zero+" confirmed Rp0, and "+
+                              outcome.failed+" still pending/failed."
+                            : "Tidak ada order baru. Pemeriksaan ulang affiliate untuk "+outcome.checked+" Order ID tertunda; "+
+                              outcome.found+" biaya ditemukan, "+outcome.zero+" dipastikan Rp0, dan "+
+                              outcome.failed+" masih menunggu/gagal.",
+                        en ? "TikTok Affiliate Recheck" : "Pemeriksaan Ulang Affiliate TikTok"
+                    );
+                }catch(affiliateError){
+                    sellerBooksAlert(
+                        "Tidak ada order baru. Pemeriksaan ulang affiliate belum selesai: "+
+                        String(affiliateError?.message||affiliateError),
+                        "Pemeriksaan Affiliate TikTok"
+                    );
+                }
+            }else{
+                sellerBooksAlert(
+                    sellerBooksPullOrderText("noOrders","TikTok",Number(result.orders_found||0)),
+                    sellerBooksPullOrderText("resultTitle","TikTok")
+                );
+            }
             return;
         }
 
