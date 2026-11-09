@@ -306,7 +306,7 @@ Deno.serve(async (req: Request) => {
       const ineligible = String(sku?.fully_return || "").toLowerCase() === "yes" ||
         String(sku?.settlement_status || "").toUpperCase() === "INELIGIBLE";
       const selected = ineligible ? 0 : (actual !== null ? actual : (estimated !== null ? estimated : 0));
-      if (!ineligible && (actual !== null || estimated !== null)) amountRowsFound++;
+      if (ineligible || actual !== null || estimated !== null) amountRowsFound++;
       commissionTotal += selected;
       return {
         sku_id: String(sku?.sku_id || ""),
@@ -318,6 +318,25 @@ Deno.serve(async (req: Request) => {
         selected_amount: selected,
       };
     });
+    if (exactOrder && skuRows.length > 0 && amountRowsFound === 0) {
+      return response({
+        ok: true,
+        mode: "TIKTOK_SELLER_AFFILIATE_ORDERS",
+        marketplace: "TikTok Shop",
+        order_id: orderId,
+        affiliate_commission: {
+          found: false, amount: null, source_mode: "SELLER_AFFILIATE_ORDERS",
+          source_field: "skus[].estimated_paid_commission/actual_paid_commission", status: "PENDING_DATA",
+        },
+        lookup: {
+          order_found: true, fee_field_confirmed: false, pages_scanned: pagesScanned,
+          pagination_complete: paginationComplete, total_count: totalCount,
+          error: "AFFILIATE_ORDER_FOUND_BUT_COMMISSION_AMOUNT_NOT_RETURNED",
+          diagnostic: { sku_count: skuRows.length, sku_rows: skuDiagnostics },
+        },
+      });
+    }
+
     const confirmedAmount = exactOrder ? Math.abs(commissionTotal) : 0;
     return response({
       ok: true,
