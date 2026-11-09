@@ -54,6 +54,7 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
         amount:found ? Number(affiliate.amount)||0 : null,
         source_mode:String(affiliate.source_mode||"UNSETTLED_ESTIMATE"),
         source_field:String(affiliate.source_field||""),
+        diagnostic:affiliate.diagnostic||{},
         status:found ? "CONFIRMED" : "PENDING",
         error:error
     };
