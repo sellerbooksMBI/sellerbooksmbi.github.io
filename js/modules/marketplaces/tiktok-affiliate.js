@@ -42,18 +42,19 @@ window.sellerBooksFetchTikTokAffiliate = async function(orderId, orderCreateTime
        Lookup eligibility is based only on exact Order ID, never order date. */
     const affiliate=result?.affiliate_commission||{};
     const lookup=result?.lookup||{};
-    const lookupError=String(lookup.error||"");
-    const exactOrderFound=lookup.unsettled_order_found===true;
-    const found=affiliate.found===true && Number.isFinite(Number(affiliate.amount));
-    const incomplete=!exactOrderFound;
-    const error=lookupError || (incomplete ? "ORDER_LOOKUP_INCOMPLETE: exact Order ID was not verified in unsettled transactions." : "");
+    /* An explicit TikTok field value, including "0", is confirmed.
+       An omitted field means pending, not confirmed Rp0. */
+    const found=affiliate.found===true &&
+        lookup.fee_field_confirmed===true &&
+        Number.isFinite(Number(affiliate.amount));
+    const error=found ? "" : String(lookup.error||"AFFILIATE_FEE_NOT_YET_AVAILABLE_FOR_EXACT_ORDER_ID");
     return {
         order_id:order,
         found:found,
-        amount:found ? Number(affiliate.amount)||0 : (exactOrderFound ? 0 : null),
+        amount:found ? Number(affiliate.amount)||0 : null,
         source_mode:String(affiliate.source_mode||"UNSETTLED_ESTIMATE"),
         source_field:String(affiliate.source_field||""),
-        status:found ? "AFFILIATE_FOUND" : (error ? "LOOKUP_ERROR" : "AFFILIATE_NOT_AVAILABLE"),
+        status:found ? "CONFIRMED" : "PENDING",
         error:error
     };
 };
@@ -95,16 +96,16 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             result=await window.sellerBooksFetchTikTokAffiliate(item.orderId,0,storeId);
         }catch(error){
             failed++;
+            console.warn("TikTok affiliate lookup failed for Order ID",item.orderId,error);
+            continue;
         }
-        if(!result || result.error){
-            if(result?.error){
-                failed++;
-                console.warn("TikTok affiliate lookup incomplete for Order ID",item.orderId,result.error);
-            }
-            continue; // Never overwrite finance data with Rp0 when lookup failed.
+        if(!result || result.status!=="CONFIRMED" || result.error){
+            failed++;
+            if(result?.error)console.warn("TikTok affiliate lookup pending for Order ID",item.orderId,result.error);
+            continue; // Missing fee data is retried later; it is not Rp0.
         }
         const amount=Math.abs(Number(result.amount)||0);
-        if(result.found===true)found++;
+        if(amount>0)found++;
         amounts.set(item.recordId+"::"+item.orderId,amount);
     }
 
@@ -117,6 +118,8 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             const orderId=String(tx.orderId||"").trim();
             const key=String(record.id||"")+"::"+orderId;
             if(!amounts.has(key))return;
+            tx.affiliateCommissionStatus="CONFIRMED";
+            tx.affiliateCommissionCheckedAt=new Date().toISOString();
             if(!seen.has(orderId)){
                 tx.affiliateCommissionAmount=amounts.get(key);
                 seen.add(orderId);
@@ -142,11 +145,16 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             if(String(record.storeId||"")!==String(storeId))return;
             (record.transactions||[]).forEach(function(tx){
                 const key=String(record.id||"")+"::"+String(tx.orderId||"").trim();
-                if(amounts.has(key)&&!verify.has(key))verify.set(key,Number(tx.affiliateCommissionAmount||0));
+                if(amounts.has(key)&&!verify.has(key))verify.set(key,{
+                    amount:Number(tx.affiliateCommissionAmount||0),
+                    status:String(tx.affiliateCommissionStatus||"")
+                });
             });
         });
         return Array.from(amounts.entries()).every(function(entry){
-            return verify.has(entry[0])&&Math.abs(verify.get(entry[0])-entry[1])<0.01;
+            return verify.has(entry[0])&&
+                verify.get(entry[0]).status==="CONFIRMED"&&
+                Math.abs(verify.get(entry[0]).amount-entry[1])<0.01;
         });
     });
     if(typeof sellerBooksRefreshActiveViewAfterSalesImport==="function")sellerBooksRefreshActiveViewAfterSalesImport();
