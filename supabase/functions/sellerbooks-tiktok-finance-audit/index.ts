@@ -132,14 +132,14 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
     const skuValue = sumExactPath(skuRows, path);
     return skuValue.found ? skuValue : sumExactPath(orderRows, path);
   };
-  const affiliatePrimary = feeRowsFor("fee_tax_breakdown.fee.affiliate_commission_amount");
   const affiliateAds = feeRowsFor("fee_tax_breakdown.fee.affiliate_ads_commission_amount");
-  // TikTok Indonesia may report the Seller Center affiliate-ads charge in
-  // affiliate_ads_commission_amount while affiliate_commission_amount is zero.
-  // Use the ads field as a fallback, never add both representations together.
-  const affiliate = (affiliatePrimary.amount !== 0 || !affiliateAds.found)
-    ? { ...affiliatePrimary, selected_field: "fee_tax_breakdown.fee.affiliate_commission_amount" }
-    : { ...affiliateAds, selected_field: "fee_tax_breakdown.fee.affiliate_ads_commission_amount" };
+  const affiliatePrimary = feeRowsFor("fee_tax_breakdown.fee.affiliate_commission_amount");
+  // SellerBooks' verified TikTok affiliate-cost source is affiliate_ads_commission_amount.
+  // Prefer this field even when the generic affiliate commission field is also populated;
+  // never add the two fields together or silently substitute a different fee category.
+  const affiliate = affiliateAds.found
+    ? { ...affiliateAds, selected_field: "fee_tax_breakdown.fee.affiliate_ads_commission_amount" }
+    : { ...affiliatePrimary, selected_field: "fee_tax_breakdown.fee.affiliate_commission_amount" };
   const processingStandard = feeRowsFor("fee_tax_breakdown.fee.transaction_fee_amount");
   const infrastructureFee = feeRowsFor("fee_tax_breakdown.fee.vn_fix_infrastructure_fee");
   // In the tested Indonesia transaction, Seller Center's order-processing fee
@@ -215,7 +215,7 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
       sourceUnavailable.length ? "SOURCE_FIELD_UNAVAILABLE" : "INCOMPLETE_COMPONENT_MAPPING",
     warnings: ["Exact requested fields are mapped separately; all discovered fee/tax fields are exposed for review.",
       "SKU rows take precedence over order rows to avoid duplicate aggregation.",
-      "Affiliate commission uses affiliate_commission_amount, falling back to affiliate_ads_commission_amount when the primary field is zero or absent; both are never added together.",
+      "SellerBooks affiliate cost reads affiliate_ads_commission_amount first; the generic affiliate_commission_amount is only a fallback when the ads field is absent, and the two are never added together.",
       "Order processing uses transaction_fee_amount, falling back to vn_fix_infrastructure_fee when the primary field is zero or absent; infrastructure is never added twice.",
       "TikTok fee_and_tax_amount excludes logistics in this reconciliation; logistics is shown separately and included in the seven-component total.",
       "Unsettled values are estimates; settled statement values are final."],
@@ -307,15 +307,11 @@ Deno.serve(async (req: Request) => {
      * Do not call /affiliate_seller/*: the connected app has no access to that API.
      * Match by exact Order ID; order_create_time only narrows the Finance API window.
      */
-    const rawCreateTime = Number(body.order_create_time || 0);
-    const orderCreateTime = Number.isFinite(rawCreateTime)
-      ? Math.floor(rawCreateTime > 1000000000000 ? rawCreateTime / 1000 : rawCreateTime)
-      : 0;
-    const now = Math.floor(Date.now() / 1000);
-    const windowStart = orderCreateTime > 0
-      ? Math.max(1735689600, orderCreateTime - 86400)
-      : Math.max(1735689600, now - 90 * 86400);
-    const windowEnd = orderCreateTime > 0 ? orderCreateTime + 86400 : now + 1;
+    // Order ID is the only identity key for affiliate matching.
+    // Do not restrict Finance lookup to order_create_time: TikTok creates the
+    // unsettled transaction when its financial event is generated (often after
+    // the order itself), so a +/-1 day order-date window can miss valid fees.
+    // Omitting search_time filters uses TikTok's documented full range from 2025-01-01.
 
     const feeKeys = (rows: any[]) => {
       const keys = new Set<string>();
@@ -449,10 +445,8 @@ Deno.serve(async (req: Request) => {
       let pageToken = "";
       for (let page = 0; page < 100; page++) {
         const query: Record<string, string> = {
-          search_time_ge: String(windowStart),
-          search_time_lt: String(windowEnd),
           sort_field: "order_create_time",
-          sort_order: "ASC",
+          sort_order: "DESC",
           page_size: "100",
         };
         if (pageToken) query.page_token = pageToken;
