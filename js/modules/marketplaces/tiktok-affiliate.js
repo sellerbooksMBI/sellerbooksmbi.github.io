@@ -153,7 +153,16 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
         });
     });
 
-    sellerBooksStorage.setItem("sellerbooks_sales_imports",JSON.stringify(latest));
+    const serializedImports=JSON.stringify(latest);
+    sellerBooksStorage.setItem("sellerbooks_sales_imports",serializedImports);
+    /*
+       IMPORTANT: persistCloudDataStrict serializes sellerBooksCloudState, not
+       the localStorage wrapper. Update the cloud snapshot before saving;
+       otherwise the old snapshot overwrites the affiliate amounts on refresh.
+    */
+    if(sellerBooksCloudState && typeof sellerBooksCloudState==="object"){
+        sellerBooksCloudState["sellerbooks_sales_imports"]=serializedImports;
+    }
     if(typeof sellerBooksInvalidateSalesReportCaches==="function")sellerBooksInvalidateSalesReportCaches();
     if(typeof sellerBooksCloudSaveTimer!=="undefined" && sellerBooksCloudSaveTimer){
         clearTimeout(sellerBooksCloudSaveTimer);
