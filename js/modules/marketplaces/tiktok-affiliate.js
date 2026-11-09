@@ -124,7 +124,9 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             amount:amount,
             source_mode:String(result.source_mode||""),
             source_field:String(result.source_field||""),
-            diagnostic:result.diagnostic||{}
+            source_mode:String(result.source_mode||""),
+            diagnostic:result.diagnostic||{},
+            lookup_diagnostic:result.lookup_diagnostic||{}
         });
         amounts.set(item.recordId+"::"+item.orderId,amount);
     }
@@ -139,6 +141,7 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             const key=String(record.id||"")+"::"+orderId;
             if(!amounts.has(key))return;
             tx.affiliateCommissionStatus="CONFIRMED";
+            tx.affiliateCommissionSource="SELLER_AFFILIATE_ORDERS";
             tx.affiliateCommissionCheckedAt=new Date().toISOString();
             if(!seen.has(orderId)){
                 tx.affiliateCommissionAmount=amounts.get(key);
