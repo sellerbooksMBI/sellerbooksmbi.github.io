@@ -144,37 +144,54 @@ async function syncTikTokOrdersNowInternal(storeId){
         }
 
         if(result.status==="RAW_FILE_READY"){
-            /* Catat Order ID yang sudah ada SEBELUM import berjalan.
-               Dengan begitu affiliate hanya diperiksa untuk Order ID yang
-               benar-benar baru masuk pada proses Tarik Order ini. */
+            /* Kenali Order ID yang sudah ada dan affiliate yang belum
+               terkonfirmasi. Order lama yang masih pending harus dicoba lagi,
+               tetapi fee yang sudah confirmed tidak boleh dihitung ulang. */
             const existingOrderIds=new Set();
+            const pendingAffiliateOrderIds=new Set();
             try{
                 const savedImports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
+                const orderStates=new Map();
                 savedImports.forEach(function(record){
                     if(String(record.storeId||"")!==String(store.id)||!/tiktok/i.test(String(record.marketplace||"")))return;
                     (record.transactions||[]).forEach(function(tx){
                         const id=String(tx.orderId||"").trim();
-                        if(id)existingOrderIds.add(id);
+                        if(!id)return;
+                        existingOrderIds.add(id);
+                        const confirmed=String(tx.affiliateCommissionStatus||"").toUpperCase()==="CONFIRMED" ||
+                            Math.abs(Number(tx.affiliateCommissionAmount)||0)>0;
+                        if(confirmed)orderStates.set(id,true);
+                        else if(!orderStates.has(id))orderStates.set(id,false);
                     });
                 });
+                orderStates.forEach(function(confirmed,id){
+                    if(!confirmed)pendingAffiliateOrderIds.add(id);
+                });
             }catch(storageError){
-                console.warn("Tidak dapat membaca daftar Order ID sebelum import:",storageError);
+                console.warn("Tidak dapat membaca status affiliate Order ID sebelum import:",storageError);
             }
 
             /* Tahap 1: masukkan semua order ke mesin Import Penjualan terlebih dahulu.
                Affiliate tidak boleh menahan order; nilai awal setiap order adalah Rp0. */
             await sellerBooksDispatchExcelQueue({showResult:true});
 
-            /* Tahap 2: periksa hanya Order ID baru dari batch ini.
-               Order yang sudah ada tidak dihitung ulang saat Tarik Order diulang. */
+            /* Tahap 2: periksa Order ID baru dan retry Order ID lama
+               yang affiliate-nya belum mendapat nilai eksplisit dari TikTok.
+               Fee yang sudah confirmed tidak pernah diperiksa ulang. */
             const financeOrders=Array.isArray(result.finance_orders)?result.finance_orders:[];
             const uniqueOrderIds=[];
             const seenOrderIds=new Set();
             financeOrders.forEach(function(item){
                 const id=String(item?.order_id||"").trim();
-                if(!id||seenOrderIds.has(id)||existingOrderIds.has(id))return;
+                if(!id||seenOrderIds.has(id)||(existingOrderIds.has(id)&&!pendingAffiliateOrderIds.has(id)))return;
                 seenOrderIds.add(id);
                 uniqueOrderIds.push(id);
+            });
+            pendingAffiliateOrderIds.forEach(function(id){
+                if(!seenOrderIds.has(id)){
+                    seenOrderIds.add(id);
+                    uniqueOrderIds.push(id);
+                }
             });
 
             if(uniqueOrderIds.length && typeof window.sellerBooksApplyTikTokAffiliateForImportedOrders==="function"){
