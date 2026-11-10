@@ -2580,7 +2580,7 @@ function getReportTransactionBaseFeePercent(transaction){
 ========================================================= */
 
 
-/* Affiliate is a separate order-level expense; never merge it into marketplace admin fees. */
+/* Affiliate is a separate order-level expense for every marketplace; never merge it into admin fees. */
 function getReportTransactionFeePercent(transaction){
     return getReportTransactionBaseFeePercent(transaction);
 }
@@ -2589,7 +2589,7 @@ function getReportTransactionFeePercent(transaction){
 function getReportAffiliateRows(transactions){
     const unique=new Map();
     (Array.isArray(transactions)?transactions:[]).forEach(function(item){
-        if(!/tiktok/i.test(String(item.marketplace||""))) return;
+        /* Marketplace-agnostic: use the normalized affiliate fields from any marketplace. */
         const orderId=String(item.orderId||"").trim();
         if(!orderId) return;
         const storeId=String(item.storeId||item.storeName||"");
@@ -3406,7 +3406,7 @@ function renderReportStoreTable(){
     }
 }
 /* =========================================================
-   TABEL BIAYA AFFILIATE TIKTOK
+   TABEL BIAYA AFFILIATE
 ========================================================= */
 function renderReportAffiliateTable(){
     const body=document.getElementById("reportAffiliateBody");
@@ -3418,7 +3418,7 @@ function renderReportAffiliateTable(){
     },0);
     if(total) total.textContent=formatRupiah(confirmedTotal);
     if(!rows.length){
-        body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:#64748b;">Belum ada data affiliate TikTok pada periode ini.</td></tr>';
+        body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:#64748b;">Belum ada data affiliate pada periode ini.</td></tr>';
         return;
     }
     body.innerHTML=rows.map(function(item){
