@@ -75,7 +75,8 @@ async function financeGet(c:any,path:string,query:Record<string,string>={}){
   let canonical=path;
   for(const key of Object.keys(params).sort()) canonical+=key+params[key];
   params.sign=await mac(secret,secret+canonical+secret);
-  const apiBase=String(c.api_base_url||B);\n  const url=new URL((apiBase.endsWith("/")?apiBase.slice(0,-1):apiBase)+path);
+  const apiBase=String(c.api_base_url||B);
+  const url=new URL((apiBase.endsWith("/")?apiBase.slice(0,-1):apiBase)+path);
   Object.entries(params).forEach(([key,value])=>url.searchParams.set(key,value));
   const response=await fetch(url,{method:"GET",headers:{"content-type":"application/json","x-tts-access-token":c.access_token}});
   const raw=await txt(response); let payload:any;
