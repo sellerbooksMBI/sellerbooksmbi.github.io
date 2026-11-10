@@ -2601,7 +2601,7 @@ function getReportAffiliateRows(transactions){
             unique.set(key,{
                 orderId:orderId,storeId:storeId,
                 storeName:String(item.storeName||"-"),
-                marketplace:String(item.marketplace||"TikTok Shop"),
+                marketplace:String(item.marketplace||"-"),
                 date:item.transactionDate||item.orderCreateTime||item.importedAt||item.reportDate||"",
                 amount:amount,status:status
             });
