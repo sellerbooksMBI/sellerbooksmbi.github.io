@@ -267,3 +267,84 @@
    TOTAL PENJUALAN + QTY + TRANSAKSI
 ========================================================= */
 
+
+
+/* =========================================================
+   PANEL HAPUS LAPORAN - SUSUNAN RAPI & RESPONSIVE
+   Posisi panel di halaman tetap; hanya tata letak internal.
+========================================================= */
+#reports .delete-report-panel {
+    display: block;
+    min-width: 0;
+}
+#reports .delete-report-heading {
+    margin: 0 0 14px;
+}
+#reports .delete-report-heading h3 {
+    margin: 0 0 5px;
+    line-height: 1.35;
+}
+#reports .delete-report-heading p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.5;
+}
+#reports .delete-report-filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    align-items: end;
+    width: 100%;
+    min-width: 0;
+}
+#reports .delete-report-field {
+    min-width: 0;
+}
+#reports .delete-report-field label {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+#reports .delete-report-field .form-control {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+#reports .delete-report-actions {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 12px;
+}
+#reports .delete-report-actions .secondary-button {
+    color: #dc2626;
+    border-color: #fecaca;
+    white-space: nowrap;
+}
+#reports .delete-report-note {
+    display: block;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #fed7aa;
+    color: #9a3412;
+    line-height: 1.5;
+}
+@media screen and (max-width: 900px) {
+    #reports .delete-report-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media screen and (max-width: 600px) {
+    #reports .delete-report-panel {
+        padding: 14px !important;
+    }
+    #reports .delete-report-filters {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+    }
+    #reports .delete-report-actions .secondary-button {
+        width: 100%;
+    }
+}
