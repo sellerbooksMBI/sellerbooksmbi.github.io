@@ -371,7 +371,16 @@ function getSalesAmount(row,data){
         data.marketplace === "TikTok" ||
         data.marketplace === "TikTok Shop"
     ){
-        /* TikTok file export: kolom SKU Subtotal After Discount. */
+        /* TikTok API: Harga Jual wajib berasal dari scope Finance. */
+        const financeIndex=data.headers.indexOf("Finance Subtotal After Seller Discount");
+        if(financeIndex>=0){
+            const financeValue=row[financeIndex];
+            if(financeValue===undefined||financeValue===null||String(financeValue).trim()===""){
+                throw new Error("Subtotal Finance TikTok belum tersedia untuk SKU ini.");
+            }
+            return parseSalesNumber(financeValue);
+        }
+        /* Excel manual lama tetap memakai kolom export P sampai adapter Finance manual tersedia. */
         return parseSalesNumber(row[15]);
     }
 
