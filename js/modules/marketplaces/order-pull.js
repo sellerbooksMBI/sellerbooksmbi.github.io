@@ -193,7 +193,7 @@ async function syncTikTokOrdersNowInternal(storeId){
         if(result.status==="RAW_FILE_READY"){
             /* Tahap 1: masukkan semua order ke mesin Import Penjualan terlebih dahulu.
                Affiliate tidak boleh menahan order; nilai awal setiap order adalah Rp0. */
-            await sellerBooksDispatchExcelQueue({showResult:true});
+            await sellerBooksDispatchExcelQueue({showResult:true,affiliateByOrderId:result.affiliate_by_order_id||{}});
 
             /*
              * Tahap 2: finance_orders adalah daftar Order ID yang benar-benar
@@ -205,15 +205,9 @@ async function syncTikTokOrdersNowInternal(storeId){
             const financeOrders=Array.isArray(result.finance_orders)?result.finance_orders:[];
             const uniqueOrderIds=[];
             const seenOrderIds=new Set();
-            financeOrders.forEach(function(item){
-                const id=String(item?.order_id||"").trim();
-                if(!id||seenOrderIds.has(id))return;
-                seenOrderIds.add(id);
-                uniqueOrderIds.push(id);
-            });
-
-            /* Tambahkan Order ID lama yang memang masih pending, agar bisa retry
-               meskipun tidak muncul lagi pada daftar order yang baru ditarik. */
+            /* Import Penjualan sudah menyimpan komisi yang ikut dikirim oleh
+               Finance saat sinkronisasi. Hanya Order ID yang masih pending
+               yang perlu memakai pemeriksaan Finance terpisah sebagai fallback. */
             try{
                 const savedImports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
                 const orderStates=new Map();
@@ -227,6 +221,12 @@ async function syncTikTokOrdersNowInternal(storeId){
                         if(confirmed)orderStates.set(id,true);
                         else if(!orderStates.has(id))orderStates.set(id,false);
                     });
+                });
+                financeOrders.forEach(function(item){
+                    const id=String(item?.order_id||"").trim();
+                    if(!id||seenOrderIds.has(id)||orderStates.get(id)===true)return;
+                    seenOrderIds.add(id);
+                    uniqueOrderIds.push(id);
                 });
                 orderStates.forEach(function(confirmed,id){
                     if(!confirmed&&!seenOrderIds.has(id)){
