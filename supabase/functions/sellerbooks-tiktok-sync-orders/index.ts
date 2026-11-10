@@ -68,10 +68,63 @@ const skuId=(i:any)=>String(i?.sku_id??i?.sku_id_str??i?.sku?.id??i?.model_id??i
 const sellerSku=(i:any)=>String(i?.seller_sku??i?.sku??i?.item_sku??i?.model_sku??"").trim();
 const sku=(i:any)=>sellerSku(i);
 const iso=(v:any)=>{const n=Number(v);if(Number.isFinite(n)&&n>100000000)return new Date(n*1000).toISOString();const d=new Date(String(v||""));return Number.isNaN(d.getTime())?new Date().toISOString():d.toISOString()};
+async function financeGet(c:any,path:string,query:Record<string,string>={}){
+  const secret=Deno.env.get("TIKTOK_SHOP_APP_SECRET");
+  if(!secret) throw Error("TIKTOK_SHOP_APP_SECRET_MISSING");
+  const params:Record<string,string>={...query,app_key:c.app_key||K,timestamp:String(Math.floor(Date.now()/1000)),shop_cipher:c.shop_cipher};
+  let canonical=path;
+  for(const key of Object.keys(params).sort()) canonical+=key+params[key];
+  params.sign=await mac(secret,secret+canonical+secret);
+  const url=new URL((c.api_base_url||B).replace(/\\/$/,"")+path);
+  Object.entries(params).forEach(([key,value])=>url.searchParams.set(key,value));
+  const response=await fetch(url,{method:"GET",headers:{"content-type":"application/json","x-tts-access-token":c.access_token}});
+  const raw=await txt(response); let payload:any;
+  try{payload=JSON.parse(raw)}catch{payload={}};
+  if(!response.ok||Number(payload?.code??-1)!==0) throw Error("TIKTOK_FINANCE_PRICE_API_ERROR:"+String(payload?.message||response.status));
+  return payload?.data||{};
+}
+const financeSellerSubtotal=(row:any):number|null=>{
+  const rb=row?.revenue_breakdown||{};
+  const direct=row?.after_seller_discounts_subtotal_amount??rb?.after_seller_discounts_subtotal_amount;
+  if(direct!==undefined&&direct!==null&&String(direct).trim()!==""){
+    const n=Number(direct); return Number.isFinite(n)?n:null;
+  }
+  const subtotal=Number(rb?.subtotal_before_discount_amount);
+  const sellerDiscount=Number(rb?.seller_discount_amount);
+  if(Number.isFinite(subtotal)&&Number.isFinite(sellerDiscount)) return subtotal+sellerDiscount;
+  return null;
+};
+const itemFinanceWeight=(item:any):number=>{
+  const qty=Math.max(1,Number(item?.quantity??item?.sku_quantity??item?.item_quantity??item?.qty??1)||1);
+  const original=Number(item?.sku_original_price??item?.original_price??item?.unit_original_price??0)||0;
+  const sellerDiscount=Number(item?.sku_seller_discount??item?.seller_discount??item?.unit_seller_discount??0)||0;
+  return Math.max(0,original*qty-sellerDiscount*qty);
+};
+async function getFinanceSubtotalsForOrder(c:any,orderId:string,items:any[]){
+  const data=await financeGet(c,"/finance/202501/orders/"+encodeURIComponent(orderId)+"/statement_transactions");
+  const skuRows=Array.isArray(data?.sku_transactions)?data.sku_transactions:[];
+  if(skuRows.length){
+    const bySku=new Map<string,number>();
+    for(const row of skuRows){
+      const id=String(row?.sku_id||"").trim();
+      const amount=financeSellerSubtotal(row);
+      if(!id||amount===null) continue;
+      bySku.set(id,(bySku.get(id)||0)+amount);
+    }
+    const mapped=items.map(item=>bySku.get(skuId(item))??null);
+    if(mapped.every(value=>value!==null)) return mapped as number[];
+    if(items.length===1&&skuRows.length===1){
+      const amount=financeSellerSubtotal(skuRows[0]);
+      if(amount!==null)return [amount];
+    }
+    throw Error("TIKTOK_FINANCE_SKU_SUBTOTAL_INCOMPLETE:"+orderId);
+  }
+  return null;
+}
 async function detail(c:any,id:string){const secret=Deno.env.get("TIKTOK_SHOP_APP_SECRET")!;const path="/order/202309/orders";const p:any={app_key:c.app_key||K,timestamp:String(Math.floor(Date.now()/1000)),shop_cipher:c.shop_cipher,ids:id};let s=path;for(const k of Object.keys(p).sort())s+=k+p[k];const signParams={app_key:p.app_key,timestamp:p.timestamp,shop_cipher:p.shop_cipher,ids:p.ids};let sig=path;for(const k of Object.keys(signParams).sort())sig+=k+signParams[k];sig+="";p.sign=await mac(secret,secret+sig+secret);const u=new URL((c.api_base_url||B)+path);Object.entries(p).forEach(([k,v])=>u.searchParams.set(k,String(v)));const r=await fetch(u,{method:"GET",headers:{"content-type":"application/json","x-tts-access-token":c.access_token}});const raw=await txt(r);let d:any;try{d=JSON.parse(raw)}catch{d={}}if(!r.ok||Number(d?.code??-1)!==0)throw Error("TIKTOK_DETAIL_ERROR:"+String(d?.message||r.status));
   return d}
 
-const TIKTOK_EXCEL_HEADERS=["Order ID","Order Status","Order Substatus","Cancelation/Return Type","Normal or Pre-order","SKU ID","Seller SKU","Product Name","Variation","Quantity","Sku Quantity of return","SKU Unit Original Price","SKU Subtotal Before Discount","SKU Platform Discount","SKU Seller Discount","SKU Subtotal After Discount","Shipping Fee After Discount","Original Shipping Fee","Shipping Fee Seller Discount","Shipping Fee Platform Discount","Distance Shipping Fee","Distance Fee","Order Refund Amount","Payment platform discount","Buyer Service Fee","Handling Fee","Shipping Insurance","Item Insurance","Order Amount","Created Time","Paid Time","RTS Time","Shipped Time","Delivered Time","Cancelled Time","Cancel By","Cancel Reason","Fulfillment Type","Warehouse Name","Tracking ID","Delivery Option","Shipping Provider Name","Buyer Message","Buyer Username","Recipient","Phone #","Zipcode","Country","Province","Regency and City","Districts","Villages","Detail Address","Additional address information","Payment Method","Weight(kg)","Product Category","Package ID","Purchase Channel","Seller Note","Checked Status","Checked Marked by","Tokopedia Invoice Number","Order Channel","Creator Handle"];
+const TIKTOK_EXCEL_HEADERS=["Order ID","Order Status","Order Substatus","Cancelation/Return Type","Normal or Pre-order","SKU ID","Seller SKU","Product Name","Variation","Quantity","Sku Quantity of return","SKU Unit Original Price","SKU Subtotal Before Discount","SKU Platform Discount","SKU Seller Discount","SKU Subtotal After Discount","Shipping Fee After Discount","Original Shipping Fee","Shipping Fee Seller Discount","Shipping Fee Platform Discount","Distance Shipping Fee","Distance Fee","Order Refund Amount","Payment platform discount","Buyer Service Fee","Handling Fee","Shipping Insurance","Item Insurance","Order Amount","Created Time","Paid Time","RTS Time","Shipped Time","Delivered Time","Cancelled Time","Cancel By","Cancel Reason","Fulfillment Type","Warehouse Name","Tracking ID","Delivery Option","Shipping Provider Name","Buyer Message","Buyer Username","Recipient","Phone #","Zipcode","Country","Province","Regency and City","Districts","Villages","Detail Address","Additional address information","Payment Method","Weight(kg)","Product Category","Package ID","Purchase Channel","Seller Note","Checked Status","Checked Marked by","Tokopedia Invoice Number","Order Channel","Creator Handle","Finance Subtotal After Seller Discount"];
 
 const rawText=(...values:any[])=>{
   for(const v of values){
@@ -111,7 +164,7 @@ const firstPackage=(order:any)=>{
   return rawText(p?.id,p?.package_id);
 };
 
-function makeTikTokExcelRow(order:any,item:any){
+function makeTikTokExcelRow(order:any,item:any,financeSubtotal:number){
   const row=new Array(TIKTOK_EXCEL_HEADERS.length).fill("");
   const num=(...values:any[])=>{
     for(const v of values){
@@ -156,7 +209,7 @@ function makeTikTokExcelRow(order:any,item:any){
   row[5]=rawText(item?.sku_id,item?.sku_id_str,item?.sku?.id,item?.sku?.sku_id); row[6]=rawText(item?.seller_sku,item?.sku?.seller_sku); row[7]=rawText(item?.product_name,item?.sku?.product_name); row[8]=rawText(item?.sku_name,item?.variation,item?.model_name,item?.sku?.sku_name,item?.sku?.name);
   row[9]=qty; row[10]=rawNumber(item?.sku_quantity_of_return,item?.returned_quantity,item?.return_quantity); row[11]=unitOriginal===null?"":unitOriginal; row[12]=subtotalBefore===null?"":subtotalBefore; row[13]=platformDiscountTotal; row[14]=sellerDiscountTotal; row[15]=subtotalAfter===null?"":subtotalAfter;
   row[16]=rawNumber(item?.shipping_fee_after_discount,order?.payment?.shipping_fee); row[17]=rawNumber(item?.original_shipping_fee,order?.payment?.original_shipping_fee); row[18]=rawNumber(item?.shipping_fee_seller_discount,order?.payment?.shipping_fee_seller_discount); row[19]=rawNumber(item?.shipping_fee_platform_discount,order?.payment?.shipping_fee_platform_discount); row[20]=rawNumber(item?.distance_shipping_fee,order?.payment?.distance_shipping_fee); row[21]=rawNumber(item?.distance_fee,order?.payment?.distance_fee); row[22]=rawNumber(item?.order_refund_amount,order?.order_refund_amount); row[23]=rawNumber(item?.payment_platform_discount,order?.payment?.platform_discount); row[24]=rawNumber(item?.buyer_service_fee,order?.payment?.buyer_service_fee); row[25]=rawNumber(item?.handling_fee,order?.payment?.handling_fee); row[26]=rawNumber(item?.shipping_insurance,order?.payment?.shipping_insurance); row[27]=rawNumber(item?.item_insurance,order?.payment?.item_insurance); row[28]=rawNumber(item?.order_amount,order?.payment?.total_amount,order?.order_amount);
-  row[29]=rawTime(item?.create_time,item?.created_time,order?.create_time,order?.created_time); row[30]=rawTime(item?.paid_time,order?.paid_time); row[31]=rawTime(item?.rts_time,order?.rts_time); row[32]=rawTime(item?.shipped_time,order?.shipped_time); row[33]=rawTime(item?.delivered_time,order?.delivered_time); row[34]=rawTime(item?.cancelled_time,item?.canceled_time,order?.cancelled_time,order?.canceled_time); row[35]=rawText(item?.cancel_by,item?.cancel_user,order?.cancel_by,order?.cancellation_initiator); row[36]=rawText(item?.cancel_reason,item?.sku_cancel_reason,order?.cancel_reason); row[37]=rawText(item?.fulfillment_type,order?.fulfillment_type); row[38]=rawText(item?.warehouse_name,order?.warehouse_name); row[39]=rawText(item?.tracking_id,item?.tracking_number,order?.tracking_number); row[40]=rawText(item?.delivery_option_type,order?.delivery_option_type); row[41]=rawText(item?.shipping_provider_name,order?.shipping_provider_name,order?.shipping_provider); row[42]=rawText(item?.buyer_message,order?.buyer_message); row[43]=rawText(item?.buyer_username,order?.buyer_username); row[44]=rawText(item?.recipient,order?.recipient); row[45]=rawText(item?.phone,item?.phone_number,order?.recipient_address?.phone_number); row[46]=rawText(item?.zipcode,order?.recipient_address?.zipcode); row[47]=rawText(item?.country,order?.recipient_address?.country); row[48]=rawText(item?.province,order?.recipient_address?.province); row[49]=rawText(item?.regency_and_city,order?.recipient_address?.city); row[50]=rawText(item?.district,order?.recipient_address?.district); row[51]=rawText(item?.villages,order?.recipient_address?.town); row[52]=rawText(item?.detail_address,order?.recipient_address?.full_address); row[53]=rawText(item?.additional_address_information,order?.recipient_address?.address_detail); row[54]=rawText(item?.payment_method,order?.payment_method); row[55]=rawNumber(item?.weight,order?.weight); row[56]=rawText(item?.product_category); row[57]=rawText(item?.package_id,item?.package_id_str,order?.package_id,firstPackage(order)); row[58]=rawText(item?.purchase_channel,order?.purchase_channel); row[59]=rawText(item?.seller_note,order?.seller_note); row[60]=rawText(item?.checked_status,order?.checked_status); row[61]=rawText(item?.checked_marked_by,order?.checked_marked_by); row[62]=rawText(item?.tokopedia_invoice_number,order?.tokopedia_invoice_number); row[63]=rawText(item?.order_channel,order?.order_channel); row[64]=rawText(item?.creator_handle,order?.creator_handle);
+  row[65]=financeSubtotal;\n  row[29]=rawTime(item?.create_time,item?.created_time,order?.create_time,order?.created_time); row[30]=rawTime(item?.paid_time,order?.paid_time); row[31]=rawTime(item?.rts_time,order?.rts_time); row[32]=rawTime(item?.shipped_time,order?.shipped_time); row[33]=rawTime(item?.delivered_time,order?.delivered_time); row[34]=rawTime(item?.cancelled_time,item?.canceled_time,order?.cancelled_time,order?.canceled_time); row[35]=rawText(item?.cancel_by,item?.cancel_user,order?.cancel_by,order?.cancellation_initiator); row[36]=rawText(item?.cancel_reason,item?.sku_cancel_reason,order?.cancel_reason); row[37]=rawText(item?.fulfillment_type,order?.fulfillment_type); row[38]=rawText(item?.warehouse_name,order?.warehouse_name); row[39]=rawText(item?.tracking_id,item?.tracking_number,order?.tracking_number); row[40]=rawText(item?.delivery_option_type,order?.delivery_option_type); row[41]=rawText(item?.shipping_provider_name,order?.shipping_provider_name,order?.shipping_provider); row[42]=rawText(item?.buyer_message,order?.buyer_message); row[43]=rawText(item?.buyer_username,order?.buyer_username); row[44]=rawText(item?.recipient,order?.recipient); row[45]=rawText(item?.phone,item?.phone_number,order?.recipient_address?.phone_number); row[46]=rawText(item?.zipcode,order?.recipient_address?.zipcode); row[47]=rawText(item?.country,order?.recipient_address?.country); row[48]=rawText(item?.province,order?.recipient_address?.province); row[49]=rawText(item?.regency_and_city,order?.recipient_address?.city); row[50]=rawText(item?.district,order?.recipient_address?.district); row[51]=rawText(item?.villages,order?.recipient_address?.town); row[52]=rawText(item?.detail_address,order?.recipient_address?.full_address); row[53]=rawText(item?.additional_address_information,order?.recipient_address?.address_detail); row[54]=rawText(item?.payment_method,order?.payment_method); row[55]=rawNumber(item?.weight,order?.weight); row[56]=rawText(item?.product_category); row[57]=rawText(item?.package_id,item?.package_id_str,order?.package_id,firstPackage(order)); row[58]=rawText(item?.purchase_channel,order?.purchase_channel); row[59]=rawText(item?.seller_note,order?.seller_note); row[60]=rawText(item?.checked_status,order?.checked_status); row[61]=rawText(item?.checked_marked_by,order?.checked_marked_by); row[62]=rawText(item?.tokopedia_invoice_number,order?.tokopedia_invoice_number); row[63]=rawText(item?.order_channel,order?.order_channel); row[64]=rawText(item?.creator_handle,order?.creator_handle);
   return row;
 }
 
@@ -245,9 +298,44 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
     const orders=detailOrders.length?detailOrders:[order];
     for(const detailOrder of orders){
       const items=normalizeItemsForExcel(extractItems(detailOrder));
+      const financeItems=items.length?items:[detailOrder];
+      let financeAmounts:number[]|null=null;
+      try{
+        financeAmounts=await getFinanceSubtotalsForOrder(z,id,financeItems);
+      }catch(error){
+        throw error;
+      }
+      if(!financeAmounts){
+        // An unsettled order is represented by the Finance API at order level.
+        // It is deliberately not approximated from order-export price columns.
+        const unsettled=await financeGet(z,"/finance/202507/orders/unsettled",{
+          page_size:"100",sort_field:"order_create_time",sort_order:"DESC",
+          search_time_ge:"1735689600",search_time_lt:String(Math.floor(Date.now()/1000)+1)
+        });
+        const matches=(Array.isArray(unsettled?.transactions)?unsettled.transactions:[])
+          .filter((item:any)=>String(item?.order_id||"").trim()===id);
+        if(!matches.length) throw Error("TIKTOK_FINANCE_SUBTOTAL_PENDING:"+id);
+        const orderTotal=financeSellerSubtotal(matches[0]);
+        if(orderTotal===null) throw Error("TIKTOK_FINANCE_SUBTOTAL_FIELD_MISSING:"+id);
+        const weights=financeItems.map(itemFinanceWeight);
+        const weightTotal=weights.reduce((sum,value)=>sum+value,0);
+        if(financeItems.length===1) financeAmounts=[orderTotal];
+        else if(weightTotal>0){
+          let allocated=0;
+          financeAmounts=weights.map((weight,index)=>{
+            if(index===weights.length-1) return Number((orderTotal-allocated).toFixed(2));
+            const amount=Number((orderTotal*weight/weightTotal).toFixed(2));
+            allocated+=amount; return amount;
+          });
+        }else{
+          throw Error("TIKTOK_FINANCE_MULTI_SKU_ALLOCATION_UNAVAILABLE:"+id);
+        }
+      }
       if(items.length){
-        for(const item of items) rows.push(makeTikTokExcelRow({...order,...detailOrder},item));
-      }else rows.push(makeTikTokExcelRow({...order,...detailOrder},detailOrder));
+        for(let index=0;index<items.length;index++){
+          rows.push(makeTikTokExcelRow({...order,...detailOrder},items[index],financeAmounts[index]));
+        }
+      }else rows.push(makeTikTokExcelRow({...order,...detailOrder},detailOrder,financeAmounts[0]));
     }
   }
   if(!rows.length) return {connection_id:c.id,store_id:c.store_id,status:"NO_ORDERS",orders_found:found.length,rows_found:0};
