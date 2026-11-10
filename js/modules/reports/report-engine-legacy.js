@@ -3381,7 +3381,7 @@ function renderReportStoreTable(){
                 group.storeId
             );
 
-            const profit = netSales - group.hpp - packingCost - otherCosts - affiliateCost;
+            const profit = netSales - group.hpp - packingCost - otherCosts;
             const margin = group.sales > 0 ? (profit / group.sales) * 100 : 0;
 
             html += `
