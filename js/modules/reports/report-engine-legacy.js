@@ -2580,13 +2580,46 @@ function getReportTransactionBaseFeePercent(transaction){
 ========================================================= */
 
 
-/* Affiliate is an order-level fixed amount, added once to the existing SKU/store admin fee. */
+/* Affiliate is a separate order-level expense; never merge it into marketplace admin fees. */
 function getReportTransactionFeePercent(transaction){
-    const basePercent=getReportTransactionBaseFeePercent(transaction);
-    const affiliateAmount=Math.max(0,Number(transaction && transaction.affiliateCommissionAmount)||0);
-    if(affiliateAmount<=0) return basePercent;
-    const salesAmount=getReportTransactionSalesAmount(transaction);
-    return salesAmount>0 ? basePercent+(affiliateAmount/salesAmount*100) : basePercent;
+    return getReportTransactionBaseFeePercent(transaction);
+}
+
+/* One affiliate amount per store + Order ID, even when an order has multiple SKU rows. */
+function getReportAffiliateRows(transactions){
+    const unique=new Map();
+    (Array.isArray(transactions)?transactions:[]).forEach(function(item){
+        if(!/tiktok/i.test(String(item.marketplace||""))) return;
+        const orderId=String(item.orderId||"").trim();
+        if(!orderId) return;
+        const storeId=String(item.storeId||item.storeName||"");
+        const key=storeId+"::"+orderId;
+        const amount=Math.max(0,Number(item.affiliateCommissionAmount)||0);
+        const status=String(item.affiliateCommissionStatus||"").toUpperCase();
+        const existing=unique.get(key);
+        if(!existing){
+            unique.set(key,{
+                orderId:orderId,storeId:storeId,
+                storeName:String(item.storeName||"-"),
+                marketplace:String(item.marketplace||"TikTok Shop"),
+                date:item.transactionDate||item.orderCreateTime||item.importedAt||item.reportDate||"",
+                amount:amount,status:status
+            });
+        }else{
+            if(amount>existing.amount) existing.amount=amount;
+            if(status==="CONFIRMED") existing.status=status;
+            if(!existing.date) existing.date=item.transactionDate||item.orderCreateTime||item.importedAt||item.reportDate||"";
+        }
+    });
+    return Array.from(unique.values()).sort(function(a,b){
+        return String(b.date||"").localeCompare(String(a.date||""));
+    });
+}
+
+function getReportTotalAffiliateCost(transactions){
+    return getReportAffiliateRows(transactions).reduce(function(total,item){
+        return total+(item.status==="CONFIRMED"?item.amount:0);
+    },0);
 }
 
 function calculateReportPacking(transactions){
@@ -2760,6 +2793,7 @@ function calculateReportFinancial(options){
     let totalHpp = 0;
 
     let totalAdmin = 0;
+    const totalAffiliate = getReportTotalAffiliateCost(transactions);
 
 
     const masterProducts =
@@ -2914,7 +2948,8 @@ function calculateReportFinancial(options){
 
     const netProfit =
         grossProfit -
-        otherCosts;
+        otherCosts -
+        totalAffiliate;
 
 
     /*
@@ -2952,6 +2987,9 @@ function calculateReportFinancial(options){
 
         totalAdmin:
             totalAdmin,
+
+        totalAffiliate:
+            totalAffiliate,
 
         netSales:
             netSales,
@@ -3026,6 +3064,8 @@ function renderReportFinancial(){
         document.getElementById(
             "reportOtherCosts"
         );
+
+    const affiliateTotal = document.getElementById("reportAffiliateTotal");
 
 
     const grossProfit =
@@ -3104,6 +3144,10 @@ function renderReportFinancial(){
                 data.otherCosts
             );
 
+    }
+
+    if(affiliateTotal){
+        affiliateTotal.textContent=formatRupiah(data.totalAffiliate||0);
     }
 
 
@@ -3200,6 +3244,7 @@ function renderReportMarketplaceTable(){
                     sales:0,
                     qty:0,
                     admin:0,
+                    affiliate:0,
                     hpp:0,
                     packingIds:new Set(),
                     transactions:[]
@@ -3235,6 +3280,7 @@ function renderReportMarketplaceTable(){
 
         groups.forEach(function(group){
             const netSales = group.sales - group.admin;
+            const affiliateCost = getReportTotalAffiliateCost(group.transactions);
             const packingCost = calculateReportPackingCost(group.transactions, group.packingIds.size);
 
             const otherCosts = getReportOtherCostsByScope(
@@ -3242,7 +3288,7 @@ function renderReportMarketplaceTable(){
                 "all"
             );
 
-            const profit = netSales - group.hpp - packingCost - otherCosts;
+            const profit = netSales - group.hpp - packingCost - otherCosts - affiliateCost;
             const margin = group.sales > 0 ? (profit / group.sales) * 100 : 0;
 
             html += `
@@ -3327,6 +3373,7 @@ function renderReportStoreTable(){
 
         groups.forEach(function(group){
             const netSales = group.sales - group.admin;
+            const affiliateCost = getReportTotalAffiliateCost(group.transactions);
             const packingCost = calculateReportPackingCost(group.transactions, group.packingIds.size);
 
             const otherCosts = getReportOtherCostsByScope(
@@ -3334,7 +3381,7 @@ function renderReportStoreTable(){
                 group.storeId
             );
 
-            const profit = netSales - group.hpp - packingCost - otherCosts;
+            const profit = netSales - group.hpp - packingCost - otherCosts - affiliateCost;
             const margin = group.sales > 0 ? (profit / group.sales) * 100 : 0;
 
             html += `
@@ -3358,6 +3405,47 @@ function renderReportStoreTable(){
         body.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:35px;color:#dc2626;">Data laporan gagal ditampilkan. Silakan refresh halaman.</td></tr>`;
     }
 }
+/* =========================================================
+   TABEL BIAYA AFFILIATE TIKTOK
+========================================================= */
+function renderReportAffiliateTable(){
+    const body=document.getElementById("reportAffiliateBody");
+    const total=document.getElementById("reportAffiliateTotal");
+    if(!body) return;
+    const rows=getReportAffiliateRows(getFilteredReportTransactions());
+    const confirmedTotal=rows.reduce(function(sum,item){
+        return sum+(item.status==="CONFIRMED"?item.amount:0);
+    },0);
+    if(total) total.textContent=formatRupiah(confirmedTotal);
+    if(!rows.length){
+        body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:#64748b;">Belum ada data affiliate TikTok pada periode ini.</td></tr>';
+        return;
+    }
+    body.innerHTML=rows.map(function(item){
+        let dateText="-";
+        if(item.date){
+            let dateValue=item.date;
+            if(typeof dateValue==="number" || /^\\d+$/.test(String(dateValue))){
+                dateValue=Number(dateValue);
+                if(dateValue<1000000000000) dateValue*=1000;
+            }
+            const date=new Date(dateValue);
+            if(!isNaN(date.getTime())) dateText=date.toLocaleDateString("id-ID");
+        }
+        const confirmed=item.status==="CONFIRMED";
+        const statusText=confirmed?(item.amount>0?"Dikonfirmasi":"Rp0 terkonfirmasi"):"Menunggu data";
+        const amountText=confirmed?formatRupiah(item.amount):"-";
+        return '<tr>'+
+            '<td>'+escapeHtml(dateText)+'</td>'+
+            '<td>'+escapeHtml(item.storeName)+'</td>'+
+            '<td style="font-family:monospace;">'+escapeHtml(item.orderId)+'</td>'+
+            '<td>'+amountText+'</td>'+
+            '<td>'+escapeHtml(statusText)+'</td>'+
+            '<td>'+escapeHtml(item.marketplace)+'</td>'+
+            '</tr>';
+    }).join("");
+}
+
 /* =========================================================
    DETAIL TRANSAKSI - STATE PAGINATION
 ========================================================= */
@@ -4676,7 +4764,8 @@ function updateReports(){
     try{ renderUnmatchedSkuReport(); }catch(error){ console.error("Laporan SKU:", error); }
     try{ renderReportFinancial(); }catch(error){ console.error("Laporan keuangan:", error); }
     try{ renderReportMarketplaceTable(); }catch(error){ console.error("Laporan marketplace:", error); }
-    try{ renderReportStoreTable(); }catch(error){ console.error("Laporan akun toko:", error); }
+    try{ renderReportStoreTable();
+    renderReportAffiliateTable(); }catch(error){ console.error("Laporan akun toko:", error); }
     try{ renderReportTransactionTable(); }catch(error){ console.error("Detail transaksi:", error); }
     try{ renderReportSoldProductTable(); }catch(error){ console.error("Detail produk terjual:", error); }
     try{ sellerBooksApplyReportsLanguage(); }catch(error){ console.error("Reports language:", error); }
