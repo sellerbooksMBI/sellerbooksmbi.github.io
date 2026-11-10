@@ -4764,8 +4764,8 @@ function updateReports(){
     try{ renderUnmatchedSkuReport(); }catch(error){ console.error("Laporan SKU:", error); }
     try{ renderReportFinancial(); }catch(error){ console.error("Laporan keuangan:", error); }
     try{ renderReportMarketplaceTable(); }catch(error){ console.error("Laporan marketplace:", error); }
-    try{ renderReportStoreTable();
-    renderReportAffiliateTable(); }catch(error){ console.error("Laporan akun toko:", error); }
+    try{ renderReportStoreTable(); }catch(error){ console.error("Laporan akun toko:", error); }
+    try{ renderReportAffiliateTable(); }catch(error){ console.error("Laporan affiliate:", error); }
     try{ renderReportTransactionTable(); }catch(error){ console.error("Detail transaksi:", error); }
     try{ renderReportSoldProductTable(); }catch(error){ console.error("Detail produk terjual:", error); }
     try{ sellerBooksApplyReportsLanguage(); }catch(error){ console.error("Reports language:", error); }
