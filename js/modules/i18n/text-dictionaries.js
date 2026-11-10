@@ -329,7 +329,7 @@ function sellerBooksReportsText(key){
             totalSales:"TOTAL PENJUALAN",
             noData:"Belum ada data",
             netSales:"PENJUALAN BERSIH",
-            afterMarketplace:"Setelah potongan marketplace",
+            afterMarketplace:"Setelah potongan marketplace dan affiliate",
             productsSold:"PRODUK TERJUAL",
             totalProductsSold:"Total produk terjual",
             totalPacking:"TOTAL PACKING",
