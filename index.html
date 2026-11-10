@@ -3240,6 +3240,16 @@
                 </tbody>
             </table>
         </div>
+        <div id="reportAffiliatePagination" style="display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid #e2e8f0;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#64748b;">
+                <span>Tampilkan</span>
+                <select id="reportAffiliatePageSize" onchange="changeReportAffiliatePageSize(this.value)" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;">
+                    <option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option>
+                </select>
+                <span>baris</span>
+            </div>
+            <div id="reportAffiliatePaginationControls" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"></div>
+        </div>
     </div>
 
 
