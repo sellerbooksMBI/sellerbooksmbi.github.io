@@ -98,7 +98,7 @@ const itemFinanceWeight=(item:any):number=>{
   const qty=Math.max(1,Number(item?.quantity??item?.sku_quantity??item?.item_quantity??item?.qty??1)||1);
   const original=Number(item?.sku_original_price??item?.original_price??item?.unit_original_price??0)||0;
   const sellerDiscount=Number(item?.sku_seller_discount??item?.seller_discount??item?.unit_seller_discount??0)||0;
-  return Math.max(0,original*qty-sellerDiscount*qty);
+  return Math.max(0,original*qty-Math.abs(sellerDiscount)*qty);
 };
 async function getFinanceSubtotalsForOrder(c:any,orderId:string,items:any[]){
   const data=await financeGet(c,"/finance/202501/orders/"+encodeURIComponent(orderId)+"/statement_transactions");
@@ -291,6 +291,24 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
   }
   const found=[...foundById.values()];
   const rows:any[]=[];
+  const unsettledFinanceByOrder=new Map<string,any>();
+  let unsettledFinancePageToken="";
+  let unsettledFinanceComplete=false;
+  let unsettledFinancePages=0;
+  async function findUnsettledFinanceOrder(targetOrderId:string){
+    while(!unsettledFinanceComplete&&unsettledFinancePages<100){
+      const query:Record<string,string>={page_size:"100",sort_field:"order_create_time",sort_order:"DESC",search_time_ge:"1735689600",search_time_lt:String(Math.floor(Date.now()/1000)+1)};
+      if(unsettledFinancePageToken) query.page_token=unsettledFinancePageToken;
+      const page=await financeGet(z,"/finance/202507/orders/unsettled",query);
+      unsettledFinancePages++;
+      const txRows=Array.isArray(page?.transactions)?page.transactions:[];
+      for(const transaction of txRows){const key=String(transaction?.order_id||"").trim();if(key) unsettledFinanceByOrder.set(key,transaction);}
+      unsettledFinancePageToken=String(page?.next_page_token||"");
+      if(!unsettledFinancePageToken) unsettledFinanceComplete=true;
+      if(unsettledFinanceByOrder.has(targetOrderId)) break;
+    }
+    return unsettledFinanceByOrder.get(targetOrderId)||null;
+  }
   for(const order of found){
     const id=oid(order); if(!id) continue;
     const d=await detail(z,id);
@@ -300,22 +318,13 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
       const items=normalizeItemsForExcel(extractItems(detailOrder));
       const financeItems=items.length?items:[detailOrder];
       let financeAmounts:number[]|null=null;
-      try{
-        financeAmounts=await getFinanceSubtotalsForOrder(z,id,financeItems);
-      }catch(error){
-        throw error;
-      }
+      let settledFinanceError="";
+      try{financeAmounts=await getFinanceSubtotalsForOrder(z,id,financeItems);}
+      catch(error){settledFinanceError=String(error instanceof Error?error.message:error);}
       if(!financeAmounts){
-        // An unsettled order is represented by the Finance API at order level.
-        // It is deliberately not approximated from order-export price columns.
-        const unsettled=await financeGet(z,"/finance/202507/orders/unsettled",{
-          page_size:"100",sort_field:"order_create_time",sort_order:"DESC",
-          search_time_ge:"1735689600",search_time_lt:String(Math.floor(Date.now()/1000)+1)
-        });
-        const matches=(Array.isArray(unsettled?.transactions)?unsettled.transactions:[])
-          .filter((item:any)=>String(item?.order_id||"").trim()===id);
-        if(!matches.length) throw Error("TIKTOK_FINANCE_SUBTOTAL_PENDING:"+id);
-        const orderTotal=financeSellerSubtotal(matches[0]);
+        const unsettled=await findUnsettledFinanceOrder(id);
+        if(!unsettled) throw Error("TIKTOK_FINANCE_SUBTOTAL_PENDING:"+id+(settledFinanceError?":"+settledFinanceError:""));
+        const orderTotal=financeSellerSubtotal(unsettled);
         if(orderTotal===null) throw Error("TIKTOK_FINANCE_SUBTOTAL_FIELD_MISSING:"+id);
         const weights=financeItems.map(itemFinanceWeight);
         const weightTotal=weights.reduce((sum,value)=>sum+value,0);
@@ -327,9 +336,7 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
             const amount=Number((orderTotal*weight/weightTotal).toFixed(2));
             allocated+=amount; return amount;
           });
-        }else{
-          throw Error("TIKTOK_FINANCE_MULTI_SKU_ALLOCATION_UNAVAILABLE:"+id);
-        }
+        }else throw Error("TIKTOK_FINANCE_MULTI_SKU_ALLOCATION_UNAVAILABLE:"+id);
       }
       if(items.length){
         for(let index=0;index<items.length;index++){
