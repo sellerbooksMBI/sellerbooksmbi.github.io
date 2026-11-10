@@ -2847,47 +2847,45 @@
 
 
         <!-- HAPUS LAPORAN BERDASARKAN TANGGAL + MARKETPLACE + AKUN TOKO -->
-    <div class="content-section" style="margin-top:16px;padding:16px;background:#fff7ed;border:1px solid #fed7aa;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:260px;">
-                <h3 style="margin:0 0 5px 0;">Hapus Laporan</h3>
-                <p style="margin:0;color:#64748b;font-size:13px;">
-                    Hapus data import penjualan secara spesifik berdasarkan tanggal, marketplace, dan akun toko.
-                </p>
+    <div class="content-section delete-report-panel" style="margin-top:16px;padding:16px;background:#fff7ed;border:1px solid #fed7aa;">
+        <div class="delete-report-heading">
+            <h3>Hapus Laporan</h3>
+            <p>Hapus data import penjualan secara spesifik berdasarkan tanggal, marketplace, dan akun toko.</p>
+        </div>
+
+        <div id="deleteReportFiltersGrid" class="delete-report-filters">
+            <div class="delete-report-field">
+                <label for="deleteReportDateFrom">Dari Tanggal</label>
+                <input type="date" id="deleteReportDateFrom" class="form-control">
             </div>
 
-            <div id="deleteReportFiltersGrid" style="display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:end;flex:1;min-width:700px;">
-                <div>
-                    <label style="display:block;margin-bottom:6px;font-size:12px;font-weight:600;">Dari Tanggal</label>
-                    <input type="date" id="deleteReportDateFrom" class="form-control">
-                </div>
+            <div class="delete-report-field">
+                <label for="deleteReportDateTo">Sampai Dengan</label>
+                <input type="date" id="deleteReportDateTo" class="form-control">
+            </div>
 
-                <div>
-                    <label style="display:block;margin-bottom:6px;font-size:12px;font-weight:600;">Sampai Dengan</label>
-                    <input type="date" id="deleteReportDateTo" class="form-control">
-                </div>
+            <div class="delete-report-field">
+                <label for="deleteReportMarketplace">Marketplace</label>
+                <select id="deleteReportMarketplace" class="form-control" onchange="loadDeleteReportStoreFilter()">
+                    <option value="all">Semua Marketplace</option>
+                </select>
+            </div>
 
-                <div>
-                    <label style="display:block;margin-bottom:6px;font-size:12px;font-weight:600;">Marketplace</label>
-                    <select id="deleteReportMarketplace" class="form-control" onchange="loadDeleteReportStoreFilter()">
-                        <option value="all">Semua Marketplace</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label style="display:block;margin-bottom:6px;font-size:12px;font-weight:600;">Akun Toko</label>
-                    <select id="deleteReportStore" class="form-control">
-                        <option value="all">Semua Akun Toko</option>
-                    </select>
-                </div>
-
-                <button type="button" class="secondary-button" onclick="deleteReportsByDateRange()" style="grid-column:1 / -1;justify-self:start;color:#dc2626;border-color:#fecaca;white-space:nowrap;">
-                    🗑️ Hapus Laporan
-                </button>
+            <div class="delete-report-field">
+                <label for="deleteReportStore">Akun Toko</label>
+                <select id="deleteReportStore" class="form-control">
+                    <option value="all">Semua Akun Toko</option>
+                </select>
             </div>
         </div>
 
-        <small style="display:block;margin-top:8px;color:#9a3412;">
+        <div class="delete-report-actions">
+            <button type="button" class="secondary-button" onclick="deleteReportsByDateRange()">
+                🗑️ Hapus Laporan
+            </button>
+        </div>
+
+        <small class="delete-report-note">
             Penghapusan hanya menyentuh laporan yang sesuai dengan tanggal + marketplace + akun toko yang dipilih.
             Master Produk, Marketplace, Akun Toko, dan Biaya Lain tidak ikut dihapus.
             Stok Master Produk akan otomatis dikembalikan sesuai QTY yang sebelumnya dipotong oleh laporan yang dihapus.
