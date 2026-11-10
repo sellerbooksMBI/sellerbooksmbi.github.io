@@ -141,7 +141,8 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             const key=String(record.id||"")+"::"+orderId;
             if(!amounts.has(key))return;
             tx.affiliateCommissionStatus="CONFIRMED";
-            tx.affiliateCommissionSource="SELLER_AFFILIATE_ORDERS";
+            tx.affiliateCommissionSource="TIKTOK_FINANCE";
+            tx.affiliateCommissionSourceMode=String(details.find(function(item){return item.order_id===orderId;})?.source_mode||"");
             tx.affiliateCommissionCheckedAt=new Date().toISOString();
             if(!seen.has(orderId)){
                 tx.affiliateCommissionAmount=amounts.get(key);
