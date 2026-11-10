@@ -158,13 +158,15 @@ async function sellerBooksDispatchExcelToImportPenjualan(queueItem,showResult,af
     return result;
 }
 
+let sellerBooksExcelDispatchWaiters=[];
+
 async function sellerBooksDispatchExcelQueue(opts){
     opts=opts||{};
     if(sellerBooksExcelDispatchRunning){
         /*
-           API dapat memasukkan file mentah ketika worker sedang membaca
-           antrean. Jangan hilangkan permintaan itu: jalankan satu putaran
-           lagi setelah worker aktif selesai, dan pertahankan popup hasil.
+           Jangan biarkan pemanggil lanjut ke pemeriksaan affiliate sebelum
+           putaran antrean berikutnya selesai. Tarik Order menunggu sampai
+           transaksi benar-benar tersimpan, termasuk bila worker sedang sibuk.
         */
         sellerBooksExcelDispatchRerunRequested=true;
         if(opts.showResult)sellerBooksExcelDispatchRerunShowResult=true;
@@ -173,7 +175,9 @@ async function sellerBooksDispatchExcelQueue(opts){
             window.__sellerBooksAffiliateDispatchRerunMap||{},
             opts.affiliateByOrderId||{}
         );
-        return;
+        return await new Promise(function(resolve,reject){
+            sellerBooksExcelDispatchWaiters.push({resolve:resolve,reject:reject});
+        });
     }
     sellerBooksExcelDispatchRunning=true;
     try{
@@ -215,11 +219,17 @@ async function sellerBooksDispatchExcelQueue(opts){
         if(sellerBooksExcelDispatchRerunRequested){
             const showResult=sellerBooksExcelDispatchRerunShowResult;
             const affiliateByOrderId=window.__sellerBooksAffiliateDispatchRerunMap||{};
+            const waiters=sellerBooksExcelDispatchWaiters.splice(0);
             window.__sellerBooksAffiliateDispatchRerunMap={};
             sellerBooksExcelDispatchRerunRequested=false;
             sellerBooksExcelDispatchRerunShowResult=false;
             setTimeout(function(){
-                sellerBooksDispatchExcelQueue({showResult:showResult,affiliateByOrderId:affiliateByOrderId}).catch(console.error);
+                sellerBooksDispatchExcelQueue({showResult:showResult,affiliateByOrderId:affiliateByOrderId}).then(function(){
+                    waiters.forEach(function(waiter){waiter.resolve();});
+                }).catch(function(error){
+                    waiters.forEach(function(waiter){waiter.reject(error);});
+                    console.error(error);
+                });
             },0);
         }
     }
