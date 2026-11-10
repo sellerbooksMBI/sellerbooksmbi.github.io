@@ -3469,7 +3469,7 @@ function renderReportAffiliateTable(){
             if(!isNaN(date.getTime())) dateText=date.toLocaleDateString("id-ID");
         }
         const confirmed=item.status==="CONFIRMED";
-        const statusText=confirmed?(item.amount>0?"Dikonfirmasi":"Rp0 terkonfirmasi"):"Menunggu data";
+        const statusText=confirmed?"Valid":"Menunggu data";
         const amountText=confirmed?formatRupiah(item.amount):"-";
         return '<tr><td>'+escapeHtml(dateText)+'</td><td>'+escapeHtml(item.storeName)+'</td><td style="font-family:monospace;">'+escapeHtml(item.orderId)+'</td><td>'+amountText+'</td><td>'+escapeHtml(statusText)+'</td><td>'+escapeHtml(item.marketplace)+'</td></tr>';
     }).join("");
