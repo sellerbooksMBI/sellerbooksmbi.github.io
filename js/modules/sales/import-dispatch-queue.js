@@ -22,8 +22,8 @@ async function sellerBooksQueueRequest(path,options){
 function sellerBooksApiImportProfile(marketplace){
     const key=String(marketplace||"").toLowerCase().replace(/\s+/g,"");
     const profiles={
-        tiktok:{sku:"Seller SKU",qty:"Quantity",price:"SKU Subtotal After Discount"},
-        "tiktokshop":{sku:"Seller SKU",qty:"Quantity",price:"SKU Subtotal After Discount"},
+        tiktok:{sku:"Seller SKU",qty:"Quantity",price:"Finance Subtotal After Seller Discount"},
+        "tiktokshop":{sku:"Seller SKU",qty:"Quantity",price:"Finance Subtotal After Seller Discount"},
         shopee:{sku:"Nomor Referensi SKU",qty:"Jumlah Produk",price:"Subtotal Pesanan"},
         lazada:{sku:"sellerSku",qty:"__LAZADA_QTY_PER_ROW__",price:"unitPrice"}
     };
