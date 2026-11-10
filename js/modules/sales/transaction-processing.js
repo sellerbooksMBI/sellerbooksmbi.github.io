@@ -947,7 +947,8 @@ function saveSalesImportData(){
                 ? (affiliateByOrderId[String(storeId)+"::"+String(transactionOrderId)]
                     || affiliateByOrderId[String(transactionOrderId)])
                 : null;
-            if(affiliateRecord && affiliateRecord.found === true && !affiliateOrderSeen.has(String(transactionOrderId))){
+            const affiliateConfirmed=!!(affiliateRecord&&affiliateRecord.found===true&&Number.isFinite(Number(affiliateRecord.amount)));
+            if(affiliateConfirmed && !affiliateOrderSeen.has(String(transactionOrderId))){
                 /* TikTok mengirim fee sebagai angka negatif; ubah menjadi nilai biaya positif agar masuk ke perhitungan laba. */
                 affiliateCommissionAmount = Math.abs(Number(affiliateRecord.amount)||0);
                 affiliateOrderSeen.add(String(transactionOrderId));
@@ -1027,6 +1028,17 @@ function saveSalesImportData(){
 
                 affiliateCommissionAmount:
                     affiliateCommissionAmount,
+
+                affiliateCommissionStatus:
+                    currentSalesImport.marketplace === "TikTok"
+                        ? (affiliateConfirmed ? "CONFIRMED" : "PENDING")
+                        : "",
+
+                affiliateCommissionSource:
+                    affiliateConfirmed ? "TIKTOK_FINANCE" : "",
+
+                affiliateCommissionSourceMode:
+                    affiliateConfirmed ? String(affiliateRecord.source_mode||"") : "",
 
                 packingId:
                     packingIndex >= 0
