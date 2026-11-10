@@ -148,7 +148,7 @@ async function syncTikTokOrdersNowInternal(storeId){
                         const id=String(tx.orderId||"").trim();
                         if(!id)return;
                         const confirmed=String(tx.affiliateCommissionStatus||"").toUpperCase()==="CONFIRMED" &&
-                            String(tx.affiliateCommissionSource||"")==="SELLER_AFFILIATE_ORDERS";
+                            String(tx.affiliateCommissionSource||"")==="TIKTOK_FINANCE";
                         if(confirmed)orderStates.set(id,true);
                         else if(!orderStates.has(id))orderStates.set(id,false);
                     });
@@ -223,7 +223,7 @@ async function syncTikTokOrdersNowInternal(storeId){
                         const id=String(tx.orderId||"").trim();
                         if(!id)return;
                         const confirmed=String(tx.affiliateCommissionStatus||"").toUpperCase()==="CONFIRMED" &&
-                            String(tx.affiliateCommissionSource||"")==="SELLER_AFFILIATE_ORDERS";
+                            String(tx.affiliateCommissionSource||"")==="TIKTOK_FINANCE";
                         if(confirmed)orderStates.set(id,true);
                         else if(!orderStates.has(id))orderStates.set(id,false);
                     });
