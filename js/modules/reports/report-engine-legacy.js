@@ -3475,7 +3475,8 @@ function renderReportAffiliateTable(){
     }).join("");
     if(pagination) pagination.style.display="flex";
     if(controls){
-        let out='<span class="report-transaction-page-info">'+(startIndex+1)+'-'+endIndex+' '+sellerBooksProductText("pageOf")+' '+rows.length+'</span>';
+        const pageSeparator=sellerBooksCurrentLanguage()==="en"?"of":"dari";
+        let out='<span class="report-transaction-page-info">'+(startIndex+1)+'-'+endIndex+' '+pageSeparator+' '+rows.length+'</span>';
         out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage('+(reportAffiliatePage-1)+')" '+(reportAffiliatePage<=1?'disabled':'')+'>‹</button>';
         const maxButtons=7;
         let pageStart=Math.max(1,reportAffiliatePage-3);
@@ -3484,7 +3485,8 @@ function renderReportAffiliateTable(){
         if(pageStart>1){out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage(1)">1</button>';if(pageStart>2)out+='<span class="report-transaction-page-info">...</span>';}
         for(let page=pageStart;page<=pageEnd;page++) out+='<button type="button" class="report-transaction-page-button '+(page===reportAffiliatePage?'active':'')+'" onclick="goToReportAffiliatePage('+page+')">'+page+'</button>';
         if(pageEnd<totalPages){if(pageEnd<totalPages-1)out+='<span class="report-transaction-page-info">...</span>';out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage('+totalPages+')">'+totalPages+'</button>';}
-        out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage('+(reportAffiliatePage+1)+')" '+(reportAffiliatePage>=totalPages?'disabled':'')+' aria-label="'+sellerBooksProductText("next")+'">'+sellerBooksProductText("next")+' ›</button>';
+        const nextLabel=sellerBooksCurrentLanguage()==="en"?"Next":"Berikutnya";
+        out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage('+(reportAffiliatePage+1)+')" '+(reportAffiliatePage>=totalPages?'disabled':'')+' aria-label="'+nextLabel+'">'+nextLabel+' ›</button>';
         controls.innerHTML=out;
     }
 }
