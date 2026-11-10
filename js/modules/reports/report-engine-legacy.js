@@ -2917,7 +2917,8 @@ function calculateReportFinancial(options){
 
     const netSales =
         totalSales -
-        totalAdmin;
+        totalAdmin -
+        totalAffiliate;
 
 
     /*
@@ -2948,8 +2949,7 @@ function calculateReportFinancial(options){
 
     const netProfit =
         grossProfit -
-        otherCosts -
-        totalAffiliate;
+        otherCosts;
 
 
     /*
@@ -3279,8 +3279,8 @@ function renderReportMarketplaceTable(){
         let html = "";
 
         groups.forEach(function(group){
-            const netSales = group.sales - group.admin;
             const affiliateCost = getReportTotalAffiliateCost(group.transactions);
+            const netSales = group.sales - group.admin - affiliateCost;
             const packingCost = calculateReportPackingCost(group.transactions, group.packingIds.size);
 
             const otherCosts = getReportOtherCostsByScope(
@@ -3288,7 +3288,7 @@ function renderReportMarketplaceTable(){
                 "all"
             );
 
-            const profit = netSales - group.hpp - packingCost - otherCosts - affiliateCost;
+            const profit = netSales - group.hpp - packingCost - otherCosts;
             const margin = group.sales > 0 ? (profit / group.sales) * 100 : 0;
 
             html += `
@@ -3372,8 +3372,8 @@ function renderReportStoreTable(){
         let html = "";
 
         groups.forEach(function(group){
-            const netSales = group.sales - group.admin;
             const affiliateCost = getReportTotalAffiliateCost(group.transactions);
+            const netSales = group.sales - group.admin - affiliateCost;
             const packingCost = calculateReportPackingCost(group.transactions, group.packingIds.size);
 
             const otherCosts = getReportOtherCostsByScope(
