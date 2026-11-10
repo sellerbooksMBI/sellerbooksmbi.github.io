@@ -3408,20 +3408,56 @@ function renderReportStoreTable(){
 /* =========================================================
    TABEL BIAYA AFFILIATE
 ========================================================= */
+/* =========================================================
+   BIAYA AFFILIATE - PAGINATION
+========================================================= */
+let reportAffiliatePage=1;
+let reportAffiliatePageSize=20;
+let reportAffiliateFilterKey="";
+
+function goToReportAffiliatePage(page){
+    reportAffiliatePage=Number(page)||1;
+    renderReportAffiliateTable();
+}
+function changeReportAffiliatePageSize(value){
+    reportAffiliatePageSize=Math.max(1,Number(value)||20);
+    reportAffiliatePage=1;
+    renderReportAffiliateTable();
+}
 function renderReportAffiliateTable(){
     const body=document.getElementById("reportAffiliateBody");
     const total=document.getElementById("reportAffiliateTotal");
+    const pagination=document.getElementById("reportAffiliatePagination");
+    const controls=document.getElementById("reportAffiliatePaginationControls");
+    const pageSizeSelect=document.getElementById("reportAffiliatePageSize");
     if(!body) return;
     const rows=getReportAffiliateRows(getFilteredReportTransactions());
     const confirmedTotal=rows.reduce(function(sum,item){
         return sum+(item.status==="CONFIRMED"?item.amount:0);
     },0);
     if(total) total.textContent=formatRupiah(confirmedTotal);
+    const filterKey=[
+        document.getElementById("reportPeriod")?.value||"",
+        document.getElementById("reportMarketplace")?.value||"",
+        document.getElementById("reportStore")?.value||"",
+        document.getElementById("reportDateFrom")?.value||"",
+        document.getElementById("reportDateTo")?.value||""
+    ].join("|");
+    if(reportAffiliateFilterKey!==filterKey){
+        reportAffiliateFilterKey=filterKey;
+        reportAffiliatePage=1;
+    }
     if(!rows.length){
         body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:#64748b;">Belum ada data affiliate pada periode ini.</td></tr>';
+        if(pagination) pagination.style.display="none";
         return;
     }
-    body.innerHTML=rows.map(function(item){
+    const totalPages=Math.max(1,Math.ceil(rows.length/reportAffiliatePageSize));
+    reportAffiliatePage=Math.min(totalPages,Math.max(1,reportAffiliatePage));
+    const startIndex=(reportAffiliatePage-1)*reportAffiliatePageSize;
+    const endIndex=Math.min(startIndex+reportAffiliatePageSize,rows.length);
+    if(pageSizeSelect) pageSizeSelect.value=String(reportAffiliatePageSize);
+    body.innerHTML=rows.slice(startIndex,endIndex).map(function(item){
         let dateText="-";
         if(item.date){
             let dateValue=item.date;
@@ -3435,17 +3471,23 @@ function renderReportAffiliateTable(){
         const confirmed=item.status==="CONFIRMED";
         const statusText=confirmed?(item.amount>0?"Dikonfirmasi":"Rp0 terkonfirmasi"):"Menunggu data";
         const amountText=confirmed?formatRupiah(item.amount):"-";
-        return '<tr>'+
-            '<td>'+escapeHtml(dateText)+'</td>'+
-            '<td>'+escapeHtml(item.storeName)+'</td>'+
-            '<td style="font-family:monospace;">'+escapeHtml(item.orderId)+'</td>'+
-            '<td>'+amountText+'</td>'+
-            '<td>'+escapeHtml(statusText)+'</td>'+
-            '<td>'+escapeHtml(item.marketplace)+'</td>'+
-            '</tr>';
+        return '<tr><td>'+escapeHtml(dateText)+'</td><td>'+escapeHtml(item.storeName)+'</td><td style="font-family:monospace;">'+escapeHtml(item.orderId)+'</td><td>'+amountText+'</td><td>'+escapeHtml(statusText)+'</td><td>'+escapeHtml(item.marketplace)+'</td></tr>';
     }).join("");
+    if(pagination) pagination.style.display="flex";
+    if(controls){
+        let out='<span class="report-transaction-page-info">'+(startIndex+1)+'-'+endIndex+' dari '+rows.length+'</span>';
+        out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage('+(reportAffiliatePage-1)+')" '+(reportAffiliatePage<=1?'disabled':'')+'>‹</button>';
+        const maxButtons=7;
+        let pageStart=Math.max(1,reportAffiliatePage-3);
+        let pageEnd=Math.min(totalPages,pageStart+maxButtons-1);
+        pageStart=Math.max(1,pageEnd-maxButtons+1);
+        if(pageStart>1){out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage(1)">1</button>';if(pageStart>2)out+='<span class="report-transaction-page-info">...</span>';}
+        for(let page=pageStart;page<=pageEnd;page++) out+='<button type="button" class="report-transaction-page-button '+(page===reportAffiliatePage?'active':'')+'" onclick="goToReportAffiliatePage('+page+')">'+page+'</button>';
+        if(pageEnd<totalPages){if(pageEnd<totalPages-1)out+='<span class="report-transaction-page-info">...</span>';out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage('+totalPages+')">'+totalPages+'</button>';}
+        out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage('+(reportAffiliatePage+1)+')" '+(reportAffiliatePage>=totalPages?'disabled':'')+'>Next ›</button>';
+        controls.innerHTML=out;
+    }
 }
-
 /* =========================================================
    DETAIL TRANSAKSI - STATE PAGINATION
 ========================================================= */
