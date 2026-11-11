@@ -99,14 +99,40 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
     const amounts=new Map();
     const details=[];
     let found=0,failed=0,zero=0;
-    for(const item of pending){
-        let result=null;
-        try{
-            result=await window.sellerBooksFetchTikTokAffiliate(item.orderId,item.orderCreateTime,storeId);
-        }catch(error){
+
+    /*
+       Performance-only optimization:
+       keep the exact same per-Order-ID Finance lookup and confirmation rules,
+       but run a small bounded group concurrently instead of waiting for each
+       Order ID to finish before starting the next one. A limit of 3 avoids
+       flooding TikTok/Supabase and preserves the existing retry semantics.
+    */
+    const lookupResults=new Array(pending.length);
+    let nextLookupIndex=0;
+    const lookupConcurrency=Math.min(3,pending.length);
+    await Promise.all(Array.from({length:lookupConcurrency},async function(){
+        while(true){
+            const index=nextLookupIndex++;
+            if(index>=pending.length)return;
+            const item=pending[index];
+            try{
+                lookupResults[index]={result:await window.sellerBooksFetchTikTokAffiliate(
+                    item.orderId,item.orderCreateTime,storeId
+                )};
+            }catch(error){
+                lookupResults[index]={error:error};
+            }
+        }
+    }));
+
+    for(let index=0;index<pending.length;index++){
+        const item=pending[index];
+        const lookup=lookupResults[index]||{};
+        const result=lookup.result||null;
+        if(lookup.error){
             failed++;
-            details.push({order_id:item.orderId,status:"FAILED",error:String(error?.message||error)});
-            console.warn("TikTok affiliate lookup failed for Order ID",item.orderId,error);
+            details.push({order_id:item.orderId,status:"FAILED",error:String(lookup.error?.message||lookup.error)});
+            console.warn("TikTok affiliate lookup failed for Order ID",item.orderId,lookup.error);
             continue;
         }
         if(!result || result.status!=="CONFIRMED" || result.error){
@@ -124,7 +150,6 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             amount:amount,
             source_mode:String(result.source_mode||""),
             source_field:String(result.source_field||""),
-            source_mode:String(result.source_mode||""),
             diagnostic:result.diagnostic||{},
             lookup_diagnostic:result.lookup_diagnostic||{}
         });
