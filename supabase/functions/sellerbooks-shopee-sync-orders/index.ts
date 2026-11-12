@@ -28,7 +28,7 @@ function parseCredential(raw:string){
 async function callShopee(c:any,path:string,method:"GET"|"POST"="GET",params:Record<string,any>={},body:any=null){
   const timestamp=Math.floor(Date.now()/1000);
   const bodyText=method==="POST"?JSON.stringify(body??{}):"";
-  const base=String(c.partner_id)+"/api/v2"+path+timestamp+c.access_token+String(c.shop_id)+(method==="POST"?bodyText:"");
+  const base=String(c.partner_id)+path+timestamp+c.access_token+String(c.shop_id)+(method==="POST"?bodyText:"");
   const sign=await hmac(c.partner_key,base);
   const url=new URL((c.api_base_url||HOST)+"/api/v2"+path);
   const query={partner_id:c.partner_id,timestamp,access_token:c.access_token,shop_id:c.shop_id,sign,...params};
