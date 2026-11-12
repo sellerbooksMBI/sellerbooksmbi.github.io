@@ -17,7 +17,7 @@ function parseCredential(raw:string){
     partner_key:String(p.partner_key??p.partnerKey??p.app_key??p.appKey??"").trim(),
     access_token:String(p.access_token??p.accessToken??"").trim(),
     refresh_token:String(p.refresh_token??p.refreshToken??"").trim(),
-    api_base_url:String(p.api_base_url??p.apiBaseUrl??Deno.env.get("SHOPEE_API_BASE_URL")??HOST).replace(/\/$/,"")
+    api_base_url:String(Deno.env.get("SHOPEE_API_BASE_URL")??p.api_base_url??p.apiBaseUrl??HOST).replace(/\/$/,"")
   };
   if(!c.partner_id)throw Error("SHOPEE_PARTNER_ID_MISSING");
   if(!c.shop_id)throw Error("SHOPEE_SHOP_ID_MISSING");
@@ -170,7 +170,7 @@ Deno.serve(async req=>{
     const rawCredential=vaultRows?.[0]?.decrypted_secret;
     if(!vr.ok||!rawCredential)return out({ok:false,error:"Shopee Credential Vault tidak ditemukan"},400);
     const credential=parseCredential(rawCredential);
-    if(String(credential.shop_id)!==String(connection.store_id))return out({ok:false,error:"Shop ID tidak sama dengan Store ID akun toko"},400);
+    if(connection.external_store_id&&String(credential.shop_id)!==String(connection.external_store_id))return out({ok:false,error:"Shop ID credential tidak sama dengan external_store_id koneksi Shopee"},400);
     const now=Math.floor(Date.now()/1000);
     const from=epoch(body.time_from,now-7*86400),to=epoch(body.time_to,now);
     if(from>=to)return out({ok:false,error:"Invalid time_from/time_to"},400);
