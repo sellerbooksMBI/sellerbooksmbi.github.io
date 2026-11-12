@@ -9,8 +9,8 @@
  const msg=document.getElementById("msg"), title=document.getElementById("title");
  const url=new URL(location.href);
  const storeId=url.searchParams.get("store_id")||"", marketplaceId=url.searchParams.get("marketplace_id")||"";
- const SUPABASE_URL="https://fysaxpqpqexjnlpkbwap.supabase.co";
- const SUPABASE_KEY="sb_publishable_DWRaEZTcNMjhglwN3nqCOw_pua8rsjD";
+ const SUPABASE_URL="https://vrgiwzxwnfjhpmxcahwo.supabase.co";
+ const SUPABASE_KEY="sb_publishable_8Q1xJ_6ji1DqPvbS1GrP-Q_gV9_n3FB";
  try{
   if(!storeId||!marketplaceId) throw new Error("Store ID atau Marketplace ID tidak tersedia.");
   const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
