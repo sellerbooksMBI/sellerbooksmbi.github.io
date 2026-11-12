@@ -49,11 +49,11 @@ function iso(v:any){
 }
 function arr(v:any){return Array.isArray(v)?v:[]}
 function extractOrderList(data:any){const r=data?.response??{};return arr(r.order_list??r.order_list_info??r.orders)}
-async function listOrders(c:any,status:string,from:number,to:number){
+async function listOrders(c:any,status:string,from:number,to:number,rangeField:"create_time"|"update_time"="update_time"){
   const all:any[]=[];let cursor="";
   for(let page=0;page<100;page++){
     const d=await callShopee(c,"/order/get_order_list","GET",{
-      time_range_field:"create_time",time_from:from,time_to:to,page_size:100,cursor,order_status:status,
+      time_range_field:rangeField,time_from:from,time_to:to,page_size:100,cursor,order_status:status,
       response_optional_fields:"order_status"
     });
     all.push(...extractOrderList(d));
@@ -174,7 +174,11 @@ Deno.serve(async req=>{
     const now=Math.floor(Date.now()/1000);
     const from=epoch(body.time_from,now-7*86400),to=epoch(body.time_to,now);
     if(from>=to)return out({ok:false,error:"Invalid time_from/time_to"},400);
-    const listed=await Promise.all(["READY_TO_SHIP","PROCESSED"].map(status=>listOrders(credential,status,from,to)));
+    // Shopee status tabs reflect current status; query update_time first so orders moved into these tabs today are included, then reconcile create_time results without duplicates.
+    const listed=await Promise.all(["READY_TO_SHIP","PROCESSED"].flatMap(status=>[
+      listOrders(credential,status,from,to,"update_time"),
+      listOrders(credential,status,from,to,"create_time")
+    ]));
     const ids=Array.from(new Set(listed.flat().map((o:any)=>String(o?.order_sn||"").trim()).filter(Boolean)));
     const details=ids.length?await getOrderDetails(credential,ids):[];
     const rows=makeRows(details);
