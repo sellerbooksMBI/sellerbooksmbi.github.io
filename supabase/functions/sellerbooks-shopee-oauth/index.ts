@@ -50,10 +50,10 @@ const env=(n:string)=>{
   throw Error("CONFIG_MISSING_"+n);
 };
 
-async function rest(base:string,key:string,path:string,init:RequestInit={}){
+async function rest(base:string,key:string,path:string,init:RequestInit={},authToken?:string){
   const h=new Headers(init.headers);
   h.set("apikey",key);
-  h.set("Authorization","Bearer "+key);
+  h.set("Authorization","Bearer "+(authToken||key));
   h.set("Content-Type","application/json");
   return fetch(base+"/rest/v1/"+path,{...init,headers:h});
 }
@@ -104,11 +104,14 @@ async function init(r:Request){
     return out({ok:false,error:"store_id dan marketplace_id wajib.",stage:"request"},400);
   }
 
-  const q=await rpc(base,pub,"sellerbooks_api_upsert_connection",{
-    p_store_id:store,
-    p_marketplace_id:mid,
-    p_marketplace:"Shopee"
-  });
+  const q=await rest(base,pub,"rpc/sellerbooks_api_upsert_connection",{
+    method:"POST",
+    body:JSON.stringify({
+      p_store_id:store,
+      p_marketplace_id:mid,
+      p_marketplace:"Shopee"
+    })
+  },token);
   const qraw=await responseText(q);
   let c:any=null;
   try{c=JSON.parse(qraw);}catch{}
