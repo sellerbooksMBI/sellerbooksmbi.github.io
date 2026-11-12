@@ -300,6 +300,86 @@ async function syncTikTokOrdersNow(storeId){
     }
 }
 
+/* Shopee affiliate amounts are read from payment/get_escrow_detail_batch.
+   Update only Shopee transactions; TikTok affiliate flow remains untouched. */
+async function sellerBooksApplyShopeeAffiliateMap(storeId,affiliateByOrderId,checkedOrderIds){
+    const mapping=affiliateByOrderId&&typeof affiliateByOrderId==="object"?affiliateByOrderId:{};
+    const ids=new Set((Array.isArray(checkedOrderIds)?checkedOrderIds:[]).map(x=>String(x||"").trim()).filter(Boolean));
+    Object.keys(mapping).forEach(id=>ids.add(String(id||"").trim()));
+    if(!ids.size)return {checked:0,found:0,zero:0,pending:0,updated:0};
+    const imports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
+    let found=0,zero=0,pending=0,updated=0,changed=false;
+    imports.forEach(function(record){
+        if(String(record.storeId||"")!==String(storeId)||!/shopee/i.test(String(record.marketplace||"")))return;
+        const seen=new Set();
+        (record.transactions||[]).forEach(function(tx){
+            const orderId=String(tx.orderId||"").trim();
+            if(!ids.has(orderId))return;
+            const raw=mapping[orderId];
+            const hasFee=raw!==undefined&&raw!==null&&
+                (typeof raw!=="object"||String(raw.status||"").toUpperCase()==="CONFIRMED")&&
+                Number.isFinite(Number(typeof raw==="object"?raw.amount:raw));
+            if(hasFee){
+                const amount=Math.abs(Number(typeof raw==="object"?raw.amount:raw)||0);
+                tx.affiliateCommissionStatus="CONFIRMED";
+                tx.affiliateCommissionSource="SHOPEE_ESCROW";
+                tx.affiliateCommissionSourceField=String(raw?.source_field||"order_income.order_ams_commission_fee");
+                tx.affiliateCommissionCheckedAt=new Date().toISOString();
+                tx.affiliateCommissionAmount=seen.has(orderId)?0:amount;
+                if(!seen.has(orderId)){if(amount>0)found++;else zero++;seen.add(orderId);}
+                updated++;changed=true;
+            }else if(!seen.has(orderId)&&String(tx.affiliateCommissionStatus||"").toUpperCase()!=="CONFIRMED"){
+                tx.affiliateCommissionStatus="PENDING";
+                tx.affiliateCommissionSource="SHOPEE_ESCROW";
+                tx.affiliateCommissionAmount=0;
+                tx.affiliateCommissionCheckedAt=new Date().toISOString();
+                seen.add(orderId);pending++;updated++;changed=true;
+            }
+        });
+    });
+    if(changed){
+        const serialized=JSON.stringify(imports);
+        sellerBooksStorage.setItem("sellerbooks_sales_imports",serialized);
+        if(sellerBooksCloudState&&typeof sellerBooksCloudState==="object")sellerBooksCloudState["sellerbooks_sales_imports"]=serialized;
+        if(typeof sellerBooksInvalidateSalesReportCaches==="function")sellerBooksInvalidateSalesReportCaches();
+        if(typeof sellerBooksCloudSaveTimer!=="undefined"&&sellerBooksCloudSaveTimer){
+            clearTimeout(sellerBooksCloudSaveTimer);sellerBooksCloudSaveTimer=null;
+        }
+        const expected=sellerBooksCloneCloudState(sellerBooksCloudState);
+        await sellerBooksPersistCloudDataStrict(expected,function(savedData){
+            let saved=[];try{saved=JSON.parse(savedData["sellerbooks_sales_imports"]||"[]")||[];}catch(error){return false;}
+            const verify=new Map();
+            saved.forEach(function(record){
+                if(String(record.storeId||"")!==String(storeId)||!/shopee/i.test(String(record.marketplace||"")))return;
+                (record.transactions||[]).forEach(function(tx){
+                    const id=String(tx.orderId||"").trim();
+                    if(ids.has(id)&&!verify.has(id))verify.set(id,String(tx.affiliateCommissionStatus||""));
+                });
+            });
+            return Array.from(ids).every(function(id){
+                return !mapping[id]||verify.get(id)==="CONFIRMED";
+            });
+        });
+        if(typeof sellerBooksRefreshActiveViewAfterSalesImport==="function")sellerBooksRefreshActiveViewAfterSalesImport();
+    }
+    return {checked:ids.size,found:found,zero:zero,pending:pending,updated:updated};
+}
+
+function sellerBooksGetPendingShopeeAffiliateOrderIds(storeId){
+    const ids=new Set();
+    try{
+        const imports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];
+        imports.forEach(function(record){
+            if(String(record.storeId||"")!==String(storeId)||!/shopee/i.test(String(record.marketplace||"")))return;
+            (record.transactions||[]).forEach(function(tx){
+                const id=String(tx.orderId||"").trim();
+                if(id&&String(tx.affiliateCommissionStatus||"").toUpperCase()==="PENDING")ids.add(id);
+            });
+        });
+    }catch(error){console.warn("Tidak dapat membaca affiliate Shopee pending:",error);}
+    return Array.from(ids);
+}
+
 async function syncShopeeOrdersNowInternal(storeId){
     const store=stores.find(item=>String(item.id)===String(storeId));
     if(!store){sellerBooksAlert(sellerBooksPullOrderText("missingStore","Shopee"),"Tarik Order Shopee");return;}
@@ -313,11 +393,35 @@ async function syncShopeeOrdersNowInternal(storeId){
         const session=(await sellerBooksSupabase.auth.getSession())?.data?.session;
         if(!session?.access_token)throw new Error(sellerBooksPullOrderText("noSession","Shopee"));
         const now=Date.now(),timeFrom=new Date(now-7*86400000).toISOString(),timeTo=new Date(now).toISOString();
-        const response=await fetch(SELLERBOOKS_SUPABASE_URL+"/functions/v1/sellerbooks-shopee-sync-orders",{method:"POST",headers:{apikey:SELLERBOOKS_SUPABASE_KEY,Authorization:"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({connection_id:String(connection.id),store_id:String(store.id),time_from:timeFrom,time_to:timeTo})});
+        const pendingAffiliateIds=sellerBooksGetPendingShopeeAffiliateOrderIds(String(store.id));
+        const response=await fetch(SELLERBOOKS_SUPABASE_URL+"/functions/v1/sellerbooks-shopee-sync-orders",{method:"POST",headers:{apikey:SELLERBOOKS_SUPABASE_KEY,Authorization:"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({connection_id:String(connection.id),store_id:String(store.id),time_from:timeFrom,time_to:timeTo,pending_order_ids:pendingAffiliateIds})});
         const data=await response.json().catch(()=>({}));
         if(!response.ok||!data.ok)throw new Error(data.error||sellerBooksPullOrderText("failedFetch","Shopee"));
-        if(data.status==="NO_ORDERS"){sellerBooksAlert(sellerBooksPullOrderText("noOrders","Shopee",Number(data.orders_found||0)),sellerBooksPullOrderText("resultTitle","Shopee"));return;}
-        if(data.status==="RAW_FILE_READY"){await sellerBooksDispatchExcelQueue({showResult:true});return;}
+        const checkedIds=(Array.isArray(data.finance_orders)?data.finance_orders:[]).map(function(item){return String(item?.order_id||"").trim();}).filter(Boolean).concat(pendingAffiliateIds);
+        if(data.status==="NO_ORDERS"){
+            const outcome=await sellerBooksApplyShopeeAffiliateMap(String(store.id),data.affiliate_by_order_id||{},checkedIds);
+            const en=sellerBooksPullOrderIsEN();
+            sellerBooksAlert(
+                outcome.checked
+                    ? (en?"No new Shopee orders. Affiliate checked for "+outcome.checked+" Order IDs: "+outcome.found+" fees found, "+outcome.zero+" confirmed Rp0, "+outcome.pending+" pending.":"Tidak ada order Shopee baru. Affiliate diperiksa untuk "+outcome.checked+" Order ID: "+outcome.found+" biaya ditemukan, "+outcome.zero+" terkonfirmasi Rp0, "+outcome.pending+" masih menunggu.")
+                    : sellerBooksPullOrderText("noOrders","Shopee",Number(data.orders_found||0)),
+                sellerBooksPullOrderText("resultTitle","Shopee")
+            );
+            return;
+        }
+        if(data.status==="RAW_FILE_READY"){
+            await sellerBooksDispatchExcelQueue({showResult:true,affiliateByOrderId:data.affiliate_by_order_id||{}});
+            const outcome=await sellerBooksApplyShopeeAffiliateMap(String(store.id),data.affiliate_by_order_id||{},checkedIds);
+            console.info("Shopee affiliate batch result:",outcome);
+            const en=sellerBooksPullOrderIsEN();
+            sellerBooksAlert(
+                en
+                    ? "Shopee affiliate check: "+outcome.checked+" Order IDs, "+outcome.found+" fees found, "+outcome.zero+" confirmed Rp0, "+outcome.pending+" pending."
+                    : "Pemeriksaan affiliate Shopee: "+outcome.checked+" Order ID, "+outcome.found+" biaya ditemukan, "+outcome.zero+" terkonfirmasi Rp0, "+outcome.pending+" masih menunggu.",
+                en?"Shopee Affiliate Results":"Hasil Affiliate Shopee"
+            );
+            return;
+        }
         throw new Error(sellerBooksPullOrderText("status","Shopee")+String(data.status||"UNKNOWN"));
     }catch(error){console.error("Tarik order Shopee gagal:",error);sellerBooksAlert(sellerBooksPullOrderText("failedOrders","Shopee")+"\n\n"+(error?.message||"Terjadi kesalahan."),sellerBooksPullOrderText("errorTitle","Shopee"));}
 }
