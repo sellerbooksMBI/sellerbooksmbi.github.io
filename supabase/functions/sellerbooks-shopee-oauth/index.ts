@@ -5,7 +5,7 @@ const CORS={
   "Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods":"GET,POST,OPTIONS"
 };
-const HOST="https://partner.shopeemobile.com";
+const HOST=(Deno.env.get("SHOPEE_API_BASE_URL")||"https://partner.test-stable.shopeemobile.com").replace(/\/$/,"");
 const AUTH_PATH="/api/v2/shop/auth_partner";
 const TOKEN_PATH="/api/v2/auth/token/get";
 const INFO_PATH="/api/v2/shop/get_shop_info";
