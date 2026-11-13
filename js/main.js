@@ -388,7 +388,11 @@ async function sellerBooksPersistCloudDataNow(){
     const saveGeneration=sellerBooksCloudGeneration;
     const saveUserId=sellerBooksAuthUser.id;
 
-    sellerBooksCloudSavePromise=sellerBooksCloudSavePromise.then(async function(){
+    sellerBooksCloudSavePromise=sellerBooksCloudSavePromise
+      .catch(function(previousError){
+          console.warn("Melanjutkan autosave cloud setelah operasi sebelumnya gagal:",previousError);
+      })
+      .then(async function(){
         if(!sellerBooksCloudReady||sellerBooksCloudLoading||
            sellerBooksCloudGeneration!==saveGeneration||
            !sellerBooksAuthUser||sellerBooksAuthUser.id!==saveUserId)return;
