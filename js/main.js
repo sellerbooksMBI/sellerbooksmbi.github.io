@@ -404,10 +404,33 @@ async function sellerBooksPersistCloudDataNow(){
             if(!result.conflict){
                 sellerBooksCloudUpdatedAt=result.updatedAt;
                 sellerBooksCloudBaseState=sellerBooksCloneCloudState(snapshot);
-                sellerBooksCloudState=sellerBooksCloneCloudState(snapshot);
-                sellerBooksCloudDirtyKeys.clear();
-                sellerBooksCloudClearRequested=false;
+
+                /*
+                   Jangan mengganti cloudState dengan snapshot yang baru selesai
+                   dikirim. Pengguna bisa mengubah pengaturan/data lain ketika
+                   request masih berjalan. Pertahankan perubahan yang lebih baru
+                   dan hapus dirty flag hanya untuk key yang benar-benar sama
+                   dengan nilai snapshot yang sudah tersimpan.
+                */
+                sellerBooksCloudDirtyKeys.forEach(function(key){
+                    const currentHas=Object.prototype.hasOwnProperty.call(sellerBooksCloudState,key);
+                    const savedHas=Object.prototype.hasOwnProperty.call(snapshot,key);
+                    const sameValue=currentHas===savedHas &&
+                        (!currentHas || sellerBooksCloudState[key]===snapshot[key]);
+                    if(sameValue)sellerBooksCloudDirtyKeys.delete(key);
+                });
+
+                if(sellerBooksCloudDirtyKeys.size===0){
+                    sellerBooksCloudClearRequested=false;
+                }
+
                 await sellerBooksSaveFastCache();
+
+                /* Bila ada perubahan yang terjadi selama request berlangsung,
+                   antrekan snapshot terbaru setelah penulisan ini selesai. */
+                if(sellerBooksCloudDirtyKeys.size>0){
+                    sellerBooksQueueCloudSave();
+                }
                 return;
             }
 
