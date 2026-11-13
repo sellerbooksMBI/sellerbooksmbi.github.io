@@ -18,7 +18,7 @@ const HOST = (Deno.env.get("SHOPEE_API_BASE_URL") || (IS_SHOPEE_PRODUCTION
 const AUTH_HOST = IS_SHOPEE_PRODUCTION
   ? "https://partner.shopeemobile.com"
   : "https://openplatform.sandbox.test-stable.shopee.sg";
-const TOKEN_HOST = HOST;
+const TOKEN_HOST = IS_SHOPEE_PRODUCTION ? HOST : AUTH_HOST;
 function shopeePartnerCredentials() {
   const idName = IS_SHOPEE_PRODUCTION ? "SHOPEE_LIVE_PARTNER_ID" : "SHOPEE_PARTNER_ID";
   const keyName = IS_SHOPEE_PRODUCTION ? "SHOPEE_LIVE_PARTNER_KEY" : "SHOPEE_PARTNER_KEY";
