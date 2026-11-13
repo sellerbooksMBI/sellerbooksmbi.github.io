@@ -3,7 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
 const SHOPEE_ENVIRONMENT=String(Deno.env.get("SHOPEE_ENVIRONMENT")||"sandbox").trim().toLowerCase();
 if(SHOPEE_ENVIRONMENT!=="sandbox"&&SHOPEE_ENVIRONMENT!=="production")throw new Error("SHOPEE_ENVIRONMENT must be sandbox or production");
-const HOST=(Deno.env.get("SHOPEE_API_BASE_URL")||(SHOPEE_ENVIRONMENT==="production"?"https://partner.shopeemobile.com":"https://openplatform.sandbox.test-stable.shopee.sg")).replace(/\/$/,"");
+const HOST=(Deno.env.get(SHOPEE_ENVIRONMENT==="production"?"SHOPEE_LIVE_API_BASE_URL":"SHOPEE_SANDBOX_API_BASE_URL")||(SHOPEE_ENVIRONMENT==="sandbox"?Deno.env.get("SHOPEE_API_BASE_URL"):null)||(SHOPEE_ENVIRONMENT==="production"?"https://partner.shopeemobile.com":"https://openplatform.sandbox.test-stable.shopee.sg")).replace(/\/$/,"");
 const out=(x:any,s=200)=>new Response(JSON.stringify(x),{status:s,headers:{...CORS,"Content-Type":"application/json"}});
 const tokenOf=(r:Request)=>{const h=r.headers.get("Authorization")||"";return h.toLowerCase().startsWith("bearer ")?h.slice(7).trim():""};
 const hex=(b:Uint8Array)=>Array.from(b).map(x=>x.toString(16).padStart(2,"0")).join("");
