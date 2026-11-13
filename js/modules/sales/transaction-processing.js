@@ -1277,15 +1277,11 @@ function saveSalesImportData(){
 
     transactions.forEach(function(item){
 
-        const isShopeePacking =
-            String(item.marketplace || "").trim().toLowerCase() === "shopee";
-
+        /* Shopee API dapat tidak mengisi packingId terpisah.
+           Dalam kondisi itu, satu Order ID tetap mewakili satu packing,
+           sama seperti fallback yang dipakai mesin laporan. */
         const packingKey =
-            String(
-                isShopeePacking
-                    ? (item.packingId || "")
-                    : (item.packingId || item.orderId || "")
-            ).trim().toLowerCase();
+            String(item.packingId || item.orderId || "").trim().toLowerCase();
 
         if(packingKey){
             newPackingKeys.add(
