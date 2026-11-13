@@ -58,7 +58,7 @@ async function listOrders(c:any,status:string,from:number,to:number,rangeField:"
     });
     const pageOrders=extractOrderList(d);
     const response=d?.response||{};
-    console.log(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"order_list_page",status,time_range_field:rangeField,time_from:from,time_to:to,page,page_order_count:pageOrders.length,more:Boolean(response.more),response_keys:Object.keys(response),error:d?.error||null,message:d?.message||null}));
+    console.log(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"order_list_page",status,time_range_field:rangeField,time_from:from,time_to:to,page,page_order_count:pageOrders.length,order_id_suffixes:pageOrders.map((o:any)=>String(o?.order_sn||"").slice(-6)),more:Boolean(response.more),response_keys:Object.keys(response),error:d?.error||null,message:d?.message||null}));
     all.push(...pageOrders);
     if(!response.more)break;
     const next=String(response.next_cursor||"");
@@ -174,7 +174,12 @@ Deno.serve(async req=>{
     const credential=parseCredential(rawCredential);
     if(connection.external_store_id&&String(credential.shop_id)!==String(connection.external_store_id))return out({ok:false,error:"Shop ID credential tidak sama dengan external_store_id koneksi Shopee"},400);
     const now=Math.floor(Date.now()/1000);
-    const from=epoch(body.time_from,now-7*86400),to=epoch(body.time_to,now);
+    // Shopee "Perlu Dikirim" is the union of READY_TO_SHIP and PROCESSED.
+    // Enforce a hard 7-day lookback on the server; never widen the requested window.
+    const requestedFrom=epoch(body.time_from,now-7*86400);
+    const requestedTo=epoch(body.time_to,now);
+    const from=Math.max(requestedFrom,now-7*86400);
+    const to=Math.min(requestedTo,now);
     if(from>=to)return out({ok:false,error:"Invalid time_from/time_to"},400);
     // Shopee status tabs reflect current status; query update_time first so orders moved into these tabs today are included, then reconcile create_time results without duplicates.
     const listed=await Promise.all(["READY_TO_SHIP","PROCESSED"].flatMap(status=>[
@@ -199,7 +204,10 @@ Deno.serve(async req=>{
       orders_found:ids.length,rows_found:rows.length,queue_id:queued?.queue_id||null,file_name:queued?.file_name||null,
       finance_orders:financeOrders,affiliate_by_order_id:affiliateByOrderId,
       affiliate_checked:Object.keys(affiliateByOrderId).length,engine:"SELLERBOOKS_IMPORT_PENJUALAN",
-      order_status_filter:["READY_TO_SHIP","PROCESSED"]
+      order_status_filter:["READY_TO_SHIP","PROCESSED"],
+      time_window_seconds:to-from,
+      time_from:new Date(from*1000).toISOString(),
+      time_to:new Date(to*1000).toISOString()
     });
   }catch(e){
     const message=e instanceof Error?e.message:String(e||"Unexpected server error");
