@@ -1,7 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const CORS={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
-const HOST="https://partner.shopeemobile.com";
+const SHOPEE_ENVIRONMENT=String(Deno.env.get("SHOPEE_ENVIRONMENT")||"sandbox").trim().toLowerCase();
+if(SHOPEE_ENVIRONMENT!=="sandbox"&&SHOPEE_ENVIRONMENT!=="production")throw new Error("SHOPEE_ENVIRONMENT must be sandbox or production");
+const HOST=(Deno.env.get("SHOPEE_API_BASE_URL")||(SHOPEE_ENVIRONMENT==="production"?"https://partner.shopeemobile.com":"https://openplatform.sandbox.test-stable.shopee.sg")).replace(/\/$/,"");
 const out=(x:any,s=200)=>new Response(JSON.stringify(x),{status:s,headers:{...CORS,"Content-Type":"application/json"}});
 const tokenOf=(r:Request)=>{const h=r.headers.get("Authorization")||"";return h.toLowerCase().startsWith("bearer ")?h.slice(7).trim():""};
 const hex=(b:Uint8Array)=>Array.from(b).map(x=>x.toString(16).padStart(2,"0")).join("");
@@ -73,7 +75,7 @@ async function getOrderDetails(c:any,ids:string[]){
     const chunk=ids.slice(i,i+50);
     const d=await callShopee(c,"/order/get_order_detail","GET",{
       order_sn_list:chunk.join(","),
-      response_optional_fields:"item_list,package_list,recipient_address,buyer_username,payment_method,total_amount,create_time,update_time,shipping_carrier,tracking_number,cancel_by,cancel_reason"
+      response_optional_fields:"item_list,package_list,payment_method,total_amount,create_time,update_time,shipping_carrier,tracking_number,cancel_by,cancel_reason"
     });
     all.push(...extractOrderList(d));
   }
@@ -130,7 +132,7 @@ function makeRows(orders:any[]){
         orderId,String(order?.order_status||""),String(order?.order_substatus||""),sku,
         String(item?.item_name||""),String(item?.model_name||""),qty,price,price*qty,
         iso(order?.create_time),iso(order?.pay_time),String(pkg?.tracking_number||order?.tracking_number||""),
-        String(order?.shipping_carrier||order?.shipping_provider||""),String(order?.buyer_username||""),
+        String(order?.shipping_carrier||order?.shipping_provider||""), "",
         String(order?.payment_method||""),String(item?.model_id||""),String(item?.item_id||""),String(pkg?.package_number||"")
       ]);
     }
