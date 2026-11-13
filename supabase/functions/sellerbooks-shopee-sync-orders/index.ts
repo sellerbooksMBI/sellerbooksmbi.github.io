@@ -17,7 +17,7 @@ function parseCredential(raw:string){
     partner_key:String(p.partner_key??p.partnerKey??p.app_key??p.appKey??"").trim(),
     access_token:String(p.access_token??p.accessToken??"").trim(),
     refresh_token:String(p.refresh_token??p.refreshToken??"").trim(),
-    api_base_url:String(Deno.env.get("SHOPEE_API_BASE_URL")??p.api_base_url??p.apiBaseUrl??HOST).replace(/\/$/,"")
+    api_base_url:String(p.api_base_url??p.apiBaseUrl??Deno.env.get("SHOPEE_API_BASE_URL")??HOST).replace(/\/$/,"")
   };
   if(!c.partner_id)throw Error("SHOPEE_PARTNER_ID_MISSING");
   if(!c.shop_id)throw Error("SHOPEE_SHOP_ID_MISSING");
