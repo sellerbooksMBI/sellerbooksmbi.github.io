@@ -183,7 +183,9 @@ Deno.serve(async req=>{
     ]));
     const ids=Array.from(new Set(listed.flat().map((o:any)=>String(o?.order_sn||"").trim()).filter(Boolean)));
     const details=ids.length?await getOrderDetails(credential,ids):[];
+    console.log(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"order_detail_summary",listed_unique_order_count:ids.length,detail_count:details.length,details:details.map((o:any)=>({order_id_suffix:String(o?.order_sn||"").slice(-6),order_status:o?.order_status||null,item_count:arr(o?.item_list).length,items:arr(o?.item_list).map((it:any)=>({has_model_sku:Boolean(String(it?.model_sku||"").trim()),has_item_sku:Boolean(String(it?.item_sku||"").trim()),has_seller_sku:Boolean(String(it?.seller_sku||"").trim()),quantity:it?.model_quantity_purchased??it?.model_quantity??it?.quantity_purchased??null}))}))}));
     const rows=makeRows(details);
+    console.log(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"row_build_summary",detail_count:details.length,generated_rows:rows.length}));
     const pendingIds=Array.isArray(body.pending_order_ids)?body.pending_order_ids.map((x:any)=>String(x||"").trim()).filter(Boolean):[];
     const affiliateIds=Array.from(new Set(ids.concat(pendingIds)));
     const affiliateByOrderId=affiliateIds.length?await getAffiliateByOrderId(credential,affiliateIds):{};
