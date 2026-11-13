@@ -19,8 +19,10 @@ function parseCredential(raw:string){
     partner_key:String(p.partner_key??p.partnerKey??p.app_key??p.appKey??"").trim(),
     access_token:String(p.access_token??p.accessToken??"").trim(),
     refresh_token:String(p.refresh_token??p.refreshToken??"").trim(),
-    api_base_url:String(p.api_base_url??p.apiBaseUrl??Deno.env.get("SHOPEE_API_BASE_URL")??HOST).replace(/\/$/,"")
+    api_base_url:HOST,
+    environment:String(p.environment||"sandbox").trim().toLowerCase()
   };
+  if(c.environment!==SHOPEE_ENVIRONMENT)throw Error("SHOPEE_ENVIRONMENT_MISMATCH");
   if(!c.partner_id)throw Error("SHOPEE_PARTNER_ID_MISSING");
   if(!c.shop_id)throw Error("SHOPEE_SHOP_ID_MISSING");
   if(!c.partner_key)throw Error("SHOPEE_PARTNER_KEY_MISSING");
@@ -115,14 +117,19 @@ async function getAffiliateByOrderId(c:any,ids:string[]){
   }
   return result;
 }
-const HEADERS=["Order ID","Order Status","Order Substatus","Nomor Referensi SKU","Nama Produk","Nama Variasi","Jumlah Produk","Harga Setelah Diskon","Subtotal Pesanan","Waktu Pesanan Dibuat","Waktu Pembayaran","Nomor Resi","Kurir Pengiriman","Nama Pengguna Pembeli","Metode Pembayaran","SKU ID","Item ID","Package ID"];
+const HEADERS=["No. Pesanan","Order Status","Order Substatus","Nomor Referensi SKU","Nama Produk","Nama Variasi","Jumlah Produk","Harga Setelah Diskon","Subtotal Pesanan","Waktu Pesanan Dibuat","Waktu Pembayaran","Nomor Resi","Kurir Pengiriman","Nama Pengguna Pembeli","Metode Pembayaran","SKU ID","Item ID","Package ID"];
 function makeRows(orders:any[]){
   const rows:any[][]=[];
   for(const order of orders){
     const orderId=String(order?.order_sn||"").trim();if(!orderId)continue;
     const items=arr(order?.item_list);
     for(const item of items){
-      const sku=String(item?.model_sku||item?.item_sku||item?.seller_sku||"").trim();
+      // Sandbox orders may omit seller/model SKU values. Preserve the order line
+      // using Shopee's stable model/item ID instead of silently dropping it.
+      const sellerSku=String(item?.model_sku||item?.item_sku||item?.seller_sku||"").trim();
+      const modelId=String(item?.model_id||"").trim();
+      const itemId=String(item?.item_id||"").trim();
+      const sku=sellerSku || (modelId ? "SHOPEE_MODEL_"+modelId : itemId ? "SHOPEE_ITEM_"+itemId : "");
       const qty=Math.max(0,Number(item?.model_quantity_purchased??item?.model_quantity??item?.quantity_purchased??1)||0);
       const unit=Number(item?.model_discounted_price??item?.variation_discounted_price??item?.item_price??0);
       if(!sku||qty<=0)continue;
@@ -169,28 +176,41 @@ Deno.serve(async req=>{
     if(String(connection.marketplace_id||"").toLowerCase()!=="shopee"&&String(connection.marketplace||"").toLowerCase()!=="shopee")return out({ok:false,error:"Connection is not Shopee"},400);
     if(String(connection.connection_status||"").toUpperCase()!=="CONNECTED")return out({ok:false,error:"Shopee connection is not CONNECTED"},400);
     if(!connection.vault_secret_id)return out({ok:false,error:"Credential Vault belum tersedia"},400);
-    const vr=await rest(base,secret,"decrypted_secrets?id=eq."+encodeURIComponent(connection.vault_secret_id)+"&select=id,decrypted_secret");
-    const vaultRows=await vr.json().catch(()=>[]);
-    const rawCredential=vaultRows?.[0]?.decrypted_secret;
-    if(!vr.ok||!rawCredential)return out({ok:false,error:"Shopee Credential Vault tidak ditemukan"},400);
-    const credential=parseCredential(rawCredential);
+    const vr=await rest(base,secret,"rpc/sellerbooks_get_vault_secret",{method:"POST",body:JSON.stringify({p_secret_id:connection.vault_secret_id})});
+    const rawCredential=await txt(vr);
+    let parsedCredential:any=null;try{parsedCredential=JSON.parse(rawCredential)}catch{}
+    const credentialText=typeof parsedCredential==="string"?parsedCredential:parsedCredential;
+    if(!vr.ok||!credentialText)return out({ok:false,error:"Shopee Credential Vault tidak ditemukan",detail:!vr.ok?String(credentialText||rawCredential).slice(0,250):"empty_secret"},400);
+    const credential=parseCredential(String(credentialText));
     if(connection.external_store_id&&String(credential.shop_id)!==String(connection.external_store_id))return out({ok:false,error:"Shop ID credential tidak sama dengan external_store_id koneksi Shopee"},400);
     const now=Math.floor(Date.now()/1000);
-    // Shopee "Perlu Dikirim" is the union of READY_TO_SHIP and PROCESSED.
-    // Enforce a hard 7-day lookback on the server; never widen the requested window.
-    const requestedFrom=epoch(body.time_from,now-7*86400);
-    const requestedTo=epoch(body.time_to,now);
-    const from=Math.max(requestedFrom,now-7*86400);
-    const to=Math.min(requestedTo,now);
-    if(from>=to)return out({ok:false,error:"Invalid time_from/time_to"},400);
-    // Shopee status tabs reflect current status; query update_time first so orders moved into these tabs today are included, then reconcile create_time results without duplicates.
-    const listed=await Promise.all(["READY_TO_SHIP","PROCESSED"].flatMap(status=>[
-      listOrders(credential,status,from,to,"update_time"),
-      listOrders(credential,status,from,to,"create_time")
-    ]));
-    const ids=Array.from(new Set(listed.flat().map((o:any)=>String(o?.order_sn||"").trim()).filter(Boolean)));
+    // Match TikTok's date-independent "Perlu Dikirim" behavior.
+    // Shopee requires each get_order_list request to use a maximum 15-day window,
+    // so scan historical create_time in consecutive API-sized slices. The status
+    // filter is evaluated against the order's CURRENT status, not the date today.
+    // Import Penjualan remains responsible for duplicate detection by Order ID.
+    const from=now-730*86400;
+    const to=now;
+    const sliceSeconds=15*86400;
+    const windows:Array<{from:number;to:number}>=[];
+    for(let cursor=from;cursor<to;cursor+=sliceSeconds){
+      windows.push({from:cursor,to:Math.min(cursor+sliceSeconds,to)});
+    }
+    const statuses=["READY_TO_SHIP","PROCESSED"];
+    const tasks=statuses.flatMap(status=>windows.map(window=>({status,...window})));
+    const listed:any[]=[];
+    // Limit concurrency to avoid Shopee rate-limit bursts while covering every
+    // historical slice. Each slice auto-paginates through all available cursors.
+    for(let i=0;i<tasks.length;i+=4){
+      const batch=tasks.slice(i,i+4);
+      const batchResults=await Promise.all(batch.map(task=>
+        listOrders(credential,task.status,task.from,task.to,"create_time")
+      ));
+      listed.push(...batchResults.flat());
+    }
+    const ids=Array.from(new Set(listed.map((o:any)=>String(o?.order_sn||"").trim()).filter(Boolean)));
     const details=ids.length?await getOrderDetails(credential,ids):[];
-    console.log(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"order_detail_summary",listed_unique_order_count:ids.length,detail_count:details.length,details:details.map((o:any)=>({order_id_suffix:String(o?.order_sn||"").slice(-6),order_status:o?.order_status||null,item_count:arr(o?.item_list).length,items:arr(o?.item_list).map((it:any)=>({has_model_sku:Boolean(String(it?.model_sku||"").trim()),has_item_sku:Boolean(String(it?.item_sku||"").trim()),has_seller_sku:Boolean(String(it?.seller_sku||"").trim()),quantity:it?.model_quantity_purchased??it?.model_quantity??it?.quantity_purchased??null}))}))}));
+    console.log(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"order_detail_summary",listed_unique_order_count:ids.length,detail_count:details.length,details:details.map((o:any)=>({order_id_suffix:String(o?.order_sn||"").slice(-6),order_status:o?.order_status||null,item_count:arr(o?.item_list).length,items:arr(o?.item_list).map((it:any)=>({item_keys:Object.keys(it||{}),item_id:it?.item_id??null,model_id:it?.model_id??null,item_name:it?.item_name??null,model_name:it?.model_name??null,model_sku:it?.model_sku??null,item_sku:it?.item_sku??null,seller_sku:it?.seller_sku??null,quantity:it?.model_quantity_purchased??it?.model_quantity??it?.quantity_purchased??null}))}))}));
     const rows=makeRows(details);
     console.log(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"row_build_summary",detail_count:details.length,generated_rows:rows.length}));
     const pendingIds=Array.isArray(body.pending_order_ids)?body.pending_order_ids.map((x:any)=>String(x||"").trim()).filter(Boolean):[];
@@ -208,6 +228,8 @@ Deno.serve(async req=>{
       affiliate_checked:Object.keys(affiliateByOrderId).length,engine:"SELLERBOOKS_IMPORT_PENJUALAN",
       order_status_filter:["READY_TO_SHIP","PROCESSED"],
       time_window_seconds:to-from,
+      historical_scan_days:730,
+      historical_slices:windows.length,
       time_from:new Date(from*1000).toISOString(),
       time_to:new Date(to*1000).toISOString()
     });
