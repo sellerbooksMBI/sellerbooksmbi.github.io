@@ -636,7 +636,7 @@ async function callback(r: Request) {
       refresh_token: td.refresh_token || "",
       expire_in: td.expire_in || null,
       token_received_at: new Date().toISOString(),
-      api_base_url: HOST
+      api_base_url: TOKEN_HOST
     });
 
     const done = await rpc(
