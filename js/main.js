@@ -546,9 +546,25 @@ async function sellerBooksPersistCloudDataStrict(expectedSnapshot,verification){
 
         sellerBooksCloudUpdatedAt=readBack.updatedAt;
         sellerBooksCloudBaseState=sellerBooksCloneCloudState(readBack.data);
-        sellerBooksCloudState=sellerBooksCloneCloudState(readBack.data);
-        sellerBooksCloudDirtyKeys.clear();
-        sellerBooksCloudClearRequested=false;
+
+        /*
+           Pertahankan perubahan yang masuk saat UPDATE/read-back berlangsung.
+           Hanya dirty key yang nilainya sama dengan snapshot terverifikasi yang
+           boleh dibersihkan; perubahan lebih baru akan disimpan pada antrean
+           berikutnya, bukan hilang tertimpa hasil read-back lama.
+        */
+        sellerBooksCloudDirtyKeys.forEach(function(key){
+            const currentHas=Object.prototype.hasOwnProperty.call(sellerBooksCloudState,key);
+            const savedHas=Object.prototype.hasOwnProperty.call(snapshot,key);
+            const sameValue=currentHas===savedHas &&
+                (!currentHas || sellerBooksCloudState[key]===snapshot[key]);
+            if(sameValue)sellerBooksCloudDirtyKeys.delete(key);
+        });
+
+        if(sellerBooksCloudDirtyKeys.size===0){
+            sellerBooksCloudClearRequested=false;
+        }
+
         /* Supabase read-back above is the durable confirmation.
            IndexedDB fast-cache failure must not report a saved import as failed:
            the next page load can rebuild this optional cache from Supabase. */
@@ -556,6 +572,9 @@ async function sellerBooksPersistCloudDataStrict(expectedSnapshot,verification){
             await sellerBooksSaveFastCache();
         }catch(cacheError){
             console.warn("SellerBooks: cloud save confirmed; fast cache update failed:",cacheError);
+        }
+        if(sellerBooksCloudDirtyKeys.size>0){
+            sellerBooksQueueCloudSave();
         }
     });
 
