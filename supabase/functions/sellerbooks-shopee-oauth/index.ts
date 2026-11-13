@@ -6,9 +6,27 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
 };
 
-const HOST = (Deno.env.get("SHOPEE_API_BASE_URL") || "https://partner.test-stable.shopeemobile.com").replace(/\/$/, "");
-const AUTH_HOST = "https://openplatform.sandbox.test-stable.shopee.sg";
-const TOKEN_HOST = AUTH_HOST;
+// Sandbox is the safe default. Live credentials are isolated from Sandbox credentials.
+const SHOPEE_ENVIRONMENT = String(Deno.env.get("SHOPEE_ENVIRONMENT") || "sandbox").trim().toLowerCase();
+if (SHOPEE_ENVIRONMENT !== "sandbox" && SHOPEE_ENVIRONMENT !== "production") {
+  throw new Error("SHOPEE_ENVIRONMENT must be sandbox or production");
+}
+const IS_SHOPEE_PRODUCTION = SHOPEE_ENVIRONMENT === "production";
+const HOST = (Deno.env.get("SHOPEE_API_BASE_URL") || (IS_SHOPEE_PRODUCTION
+  ? "https://partner.shopeemobile.com"
+  : "https://partner.test-stable.shopeemobile.com")).replace(/\/$/, "");
+const AUTH_HOST = IS_SHOPEE_PRODUCTION
+  ? "https://partner.shopeemobile.com"
+  : "https://openplatform.sandbox.test-stable.shopee.sg";
+const TOKEN_HOST = HOST;
+function shopeePartnerCredentials() {
+  const idName = IS_SHOPEE_PRODUCTION ? "SHOPEE_LIVE_PARTNER_ID" : "SHOPEE_PARTNER_ID";
+  const keyName = IS_SHOPEE_PRODUCTION ? "SHOPEE_LIVE_PARTNER_KEY" : "SHOPEE_PARTNER_KEY";
+  const partnerId = Deno.env.get(idName);
+  const partnerKey = Deno.env.get(keyName);
+  if (!partnerId || !partnerKey) throw new Error("CONFIG_MISSING_" + (!partnerId ? idName : keyName));
+  return { partnerId: Number(partnerId), partnerKey };
+}
 const REDIRECT_URI = Deno.env.get("SHOPEE_OAUTH_REDIRECT_URI") || "https://vrgiwzxwnfjhpmxcahwo.supabase.co/functions/v1/sellerbooks-shopee-oauth?action=callback";
 const APP_URL = (Deno.env.get("SELLERBOOKS_APP_URL") || "https://sellerbooksmbi.github.io/").replace(/\/?$/, "/");
 const AUTH_PATH = "/api/v2/shop/auth_partner";
@@ -253,8 +271,8 @@ async function init(r: Request) {
   const base = env("SUPABASE_URL");
   const pub = env("SUPABASE_PUBLISHABLE_KEY");
   const secret = env("SUPABASE_SECRET_KEY");
-  const pid = Number(env("SHOPEE_PARTNER_ID"));
-  const rawPkey = env("SHOPEE_PARTNER_KEY").trim();
+  const { partnerId: pid, partnerKey: rawPkey } = shopeePartnerCredentials();
+  if (!Number.isFinite(pid) || pid <= 0) throw new Error("CONFIG_INVALID_SHOPEE_PARTNER_ID");
   const pkey = rawPkey.replace(/^shpk/i, "");
   const redirect = REDIRECT_URI;
 
@@ -427,8 +445,8 @@ async function init(r: Request) {
 async function callback(r: Request) {
   const base = env("SUPABASE_URL");
   const secret = env("SUPABASE_SECRET_KEY");
-  const pid = Number(env("SHOPEE_PARTNER_ID"));
-  const rawPkey = env("SHOPEE_PARTNER_KEY").trim();
+  const { partnerId: pid, partnerKey: rawPkey } = shopeePartnerCredentials();
+  if (!Number.isFinite(pid) || pid <= 0) throw new Error("CONFIG_INVALID_SHOPEE_PARTNER_ID");
   const pkey = rawPkey.replace(/^shpk/i, "");
   const callbackPage = new URL("shopee-oauth-callback.html", APP_URL).toString();
   const u = new URL(r.url);
@@ -462,6 +480,7 @@ async function callback(r: Request) {
       event: "token_sign_diagnostics",
       partner_id: pid,
       token_path: TOKEN_PATH,
+      environment: SHOPEE_ENVIRONMENT,
       host: HOST,
       timestamp: ts,
       partner_key_raw_length: rawPkey.length,
@@ -519,7 +538,7 @@ async function callback(r: Request) {
       td = attempt.data;
     }
 
-    if ((!tr.ok || td?.error || !td?.access_token) && isWrongSign(traw) && TOKEN_HOST !== AUTH_HOST) {
+    if (!IS_SHOPEE_PRODUCTION && (!tr.ok || td?.error || !td?.access_token) && isWrongSign(traw) && TOKEN_HOST !== AUTH_HOST) {
       signMode += "-alternate-sandbox-host";
       attempt = await exchange(new URL(AUTH_HOST + TOKEN_PATH), signingKey);
       tr = attempt.response;
@@ -636,7 +655,8 @@ async function callback(r: Request) {
       refresh_token: td.refresh_token || "",
       expire_in: td.expire_in || null,
       token_received_at: new Date().toISOString(),
-      api_base_url: TOKEN_HOST
+      api_base_url: HOST,
+      environment: SHOPEE_ENVIRONMENT
     });
 
     const done = await rpc(
