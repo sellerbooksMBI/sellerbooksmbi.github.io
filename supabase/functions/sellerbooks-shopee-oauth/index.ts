@@ -630,12 +630,13 @@ async function callback(r: Request) {
       provider: "shopee",
       auth_type: "oauth",
       partner_id: pid,
+      partner_key: signingKey,
       shop_id: sid,
       access_token: td.access_token,
       refresh_token: td.refresh_token || "",
       expire_in: td.expire_in || null,
       token_received_at: new Date().toISOString(),
-      api_base_url: TOKEN_HOST
+      api_base_url: HOST
     });
 
     const done = await rpc(
