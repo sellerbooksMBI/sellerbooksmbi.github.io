@@ -12,9 +12,9 @@ if (SHOPEE_ENVIRONMENT !== "sandbox" && SHOPEE_ENVIRONMENT !== "production") {
   throw new Error("SHOPEE_ENVIRONMENT must be sandbox or production");
 }
 const IS_SHOPEE_PRODUCTION = SHOPEE_ENVIRONMENT === "production";
-const HOST = (Deno.env.get("SHOPEE_API_BASE_URL") || (IS_SHOPEE_PRODUCTION
-  ? "https://partner.shopeemobile.com"
-  : "https://partner.test-stable.shopeemobile.com")).replace(/\/$/, "");
+const HOST = (Deno.env.get(IS_SHOPEE_PRODUCTION ? "SHOPEE_LIVE_API_BASE_URL" : "SHOPEE_SANDBOX_API_BASE_URL")
+  || (!IS_SHOPEE_PRODUCTION ? Deno.env.get("SHOPEE_API_BASE_URL") : null)
+  || (IS_SHOPEE_PRODUCTION ? "https://partner.shopeemobile.com" : "https://partner.test-stable.shopeemobile.com")).replace(/\/$/, "");
 const AUTH_HOST = IS_SHOPEE_PRODUCTION
   ? "https://partner.shopeemobile.com"
   : "https://openplatform.sandbox.test-stable.shopee.sg";
