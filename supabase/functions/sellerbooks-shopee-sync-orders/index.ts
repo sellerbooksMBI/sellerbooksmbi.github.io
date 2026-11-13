@@ -56,8 +56,10 @@ async function listOrders(c:any,status:string,from:number,to:number,rangeField:"
       time_range_field:rangeField,time_from:from,time_to:to,page_size:100,cursor,order_status:status,
       response_optional_fields:"order_status"
     });
-    all.push(...extractOrderList(d));
+    const pageOrders=extractOrderList(d);
     const response=d?.response||{};
+    console.log(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"order_list_page",status,time_range_field:rangeField,time_from:from,time_to:to,page,page_order_count:pageOrders.length,more:Boolean(response.more),response_keys:Object.keys(response),error:d?.error||null,message:d?.message||null}));
+    all.push(...pageOrders);
     if(!response.more)break;
     const next=String(response.next_cursor||"");
     if(!next||next===cursor)break;
