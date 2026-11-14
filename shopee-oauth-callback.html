@@ -36,7 +36,7 @@ p{font-size:14px;line-height:1.6;color:#64748b;margin:0}
         document.getElementById("icon").textContent="!";
         document.getElementById("icon").classList.add("error");
         document.getElementById("title").textContent="Integrasi Shopee gagal";
-        document.getElementById("message").textContent="Kode: "+reason;
+        document.getElementById("message").textContent = reason === "SHOPEE_ACCOUNT_ALREADY_CONNECTED" ? "Maaf, integrasi gagal. Akun Shopee ini sudah terhubung di akun SellerBooks lain." : "Kode: " + reason;
     }
 
     try{
