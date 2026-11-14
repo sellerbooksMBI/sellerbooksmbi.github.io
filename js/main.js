@@ -1403,9 +1403,7 @@ if(!window.sellerBooksMarketplaceOAuthMessageHandler){
         if(reason === alreadyConnectedReasons[marketplace]){
 
             sellerBooksAlert(
-                marketplace === "shopee"
-                ? "Maaf, integrasi gagal. Akun Shopee ini sudah terhubung di akun SellerBooks lain."
-                : "Akun " + marketplaceLabel + " ini sudah terhubung ke akun atau toko SellerBooks lain.",
+                "Akun " + marketplaceLabel + " ini sudah terhubung ke akun atau toko SellerBooks lain.",
                 "Integrasikan Akun"
             );
 
