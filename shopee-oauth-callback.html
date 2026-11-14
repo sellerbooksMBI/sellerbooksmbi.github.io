@@ -15,7 +15,7 @@ p{font-size:14px;line-height:1.6;color:#64748b;margin:0}
 </style>
 </head>
 <body>
-<div class="box">
+<div class="box" id="box">
     <div class="icon" id="icon">✓</div>
     <h1 id="title">Shopee berhasil terhubung</h1>
     <p id="message">Mengembalikan Anda ke SellerBooks...</p>
@@ -26,23 +26,55 @@ p{font-size:14px;line-height:1.6;color:#64748b;margin:0}
     const result=params.get("sellerbooks_shopee_oauth")||"error";
     const reason=params.get("reason")||"OAUTH_FAILED";
     const connectionId=params.get("connection_id")||"";
+    const missing=params.get("missing_scopes")||"";
     const target=window.location.origin;
 
-    const payload=result==="success"
-        ? {source:"sellerbooks-shopee-oauth",status:"success",connection_id:connectionId}
-        : {source:"sellerbooks-shopee-oauth",status:"error",reason:reason};
+    let payload;
 
-    if(result!=="success"){
+    if(result==="success"){
+        payload={
+            source:"sellerbooks-shopee-oauth",
+            status:"success",
+            connection_id:connectionId
+        };
+    }else if(result==="partial"){
+        payload={
+            source:"sellerbooks-shopee-oauth",
+            status:"error",
+            reason:"MISSING_SCOPES"
+        };
         document.getElementById("icon").textContent="!";
         document.getElementById("icon").classList.add("error");
-        document.getElementById("title").textContent="Integrasi Shopee gagal";
-        document.getElementById("message").textContent = reason === "SHOPEE_ACCOUNT_ALREADY_CONNECTED" ? "Maaf, integrasi gagal. Akun Shopee ini sudah terhubung di akun SellerBooks lain." : "Kode: " + reason;
+        document.getElementById("title").textContent="Shopee terhubung sebagian";
+        document.getElementById("message").textContent=
+            "Ada izin API yang belum diberikan. Kode: "+(missing||"MISSING_SCOPES");
+    }else{
+        payload={
+            source:"sellerbooks-shopee-oauth",
+            status:"error",
+            reason:reason
+        };
+        document.getElementById("icon").textContent="!";
+        document.getElementById("icon").classList.add("error");
+
+        if(reason==="SHOPEE_ACCOUNT_ALREADY_CONNECTED"){
+            document.getElementById("title").textContent="Akun Shopee sudah terhubung";
+            document.getElementById("message").textContent=
+                "Akun Shopee ini sudah terhubung ke akun atau toko SellerBooks lain.";
+        }else{
+            document.getElementById("title").textContent="Integrasi Shopee gagal";
+            document.getElementById("message").textContent="Kode: "+reason;
+        }
     }
 
     try{
         if(window.opener && !window.opener.closed){
             window.opener.postMessage(payload,target);
-            setTimeout(function(){try{window.close();}catch(e){}},1800);
+
+            setTimeout(function(){
+                try{ window.close(); }catch(e){}
+            },1800);
+
             return;
         }
     }catch(e){}
@@ -61,7 +93,7 @@ p{font-size:14px;line-height:1.6;color:#64748b;margin:0}
             deepLink += "&reason=" + encodeURIComponent(payload.reason);
         }
 
-        window.location.href=deepLink;
+        window.location.href = deepLink;
     },250);
 })();
 </script>
