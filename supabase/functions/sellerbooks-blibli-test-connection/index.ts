@@ -24,7 +24,7 @@ Deno.serve(async(req:Request)=>{
   if(!connection.vault_secret_id)return out({ok:false,error:"Kredensial Blibli belum tersimpan di Vault",trace},400);
   const vr=await rest(supabaseUrl,service,"rpc/sellerbooks_get_vault_secret",{method:"POST",body:JSON.stringify({p_secret_id:connection.vault_secret_id})});
   if(!vr.ok)return out({ok:false,error:"Gagal membaca kredensial Blibli dari Vault",trace},500);
-  const vaultRows=await vr.json(),secretText=Array.isArray(vaultRows)?vaultRows[0]?.decrypted_secret:null;
+  const vaultValue=await vr.json(),secretText=typeof vaultValue==="string"?vaultValue:Array.isArray(vaultValue)?vaultValue[0]?.decrypted_secret:vaultValue?.decrypted_secret;
   if(!secretText)return out({ok:false,error:"Kredensial Blibli tidak ditemukan di Vault",trace},400);
   let c:any;try{c=JSON.parse(secretText)}catch{return out({ok:false,error:"Format kredensial Blibli tidak valid",trace},400)}
   const clientId=String(c.api_client_id||Deno.env.get("BLIBLI_API_CLIENT_ID")||"").trim(),clientKey=String(c.api_client_key||Deno.env.get("BLIBLI_API_CLIENT_KEY")||"").trim();
