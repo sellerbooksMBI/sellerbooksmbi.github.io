@@ -475,7 +475,15 @@ async function sellerBooksPersistCloudDataNow(){
 }
 
 async function sellerBooksPersistCloudDataStrict(expectedSnapshot,verification){
-    if(!sellerBooksAuthUser||!sellerBooksCloudReady)throw new Error("Sinkronisasi Supabase belum siap.");
+    if(!sellerBooksAuthUser)throw new Error("Sesi SellerBooks belum siap.");
+
+    /* Fast-cache may open the UI before the authoritative cloud load finishes.
+       Wait for the active load (or start it) before strict import persistence. */
+    if(!sellerBooksCloudReady){
+        if(sellerBooksCloudLoadPromise)await sellerBooksCloudLoadPromise;
+        else await sellerBooksLoadCloudData();
+    }
+    if(!sellerBooksCloudReady||sellerBooksCloudLoading)throw new Error("Data cloud SellerBooks belum berhasil dimuat. Silakan coba kembali.");
 
     const saveUserId=String(sellerBooksAuthUser.id||"");
     const saveGeneration=sellerBooksCloudGeneration;
