@@ -229,15 +229,33 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
 const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETTLED_FINAL") => {
   const audit = buildTikTokFeeAudit(data, sourceMode);
   const component = audit?.components?.affiliate_commission;
+  const rows = Array.isArray(data?.transactions) ? data.transactions : [data];
+  const breakdownRows = rows.filter((row: any) =>
+    row?.fee_tax_breakdown && typeof row.fee_tax_breakdown === "object"
+  );
+  const hasAffiliateField = breakdownRows.some((row: any) => {
+    const visit = (value: any, depth: number): boolean => {
+      if (!value || typeof value !== "object" || depth > 5) return false;
+      return Object.entries(value).some(([key, child]) =>
+        /(affiliate|commission)/i.test(key) ||
+        (child && typeof child === "object" && visit(child, depth + 1))
+      );
+    };
+    return visit(row.fee_tax_breakdown, 0);
+  });
+  /* An exact Finance transaction with a returned fee breakdown but no
+     affiliate/commission field is a confirmed zero, not an endless pending. */
+  const confirmedZero = component?.found !== true && breakdownRows.length > 0 && !hasAffiliateField;
   return {
-    found: component?.found === true,
-    amount: component?.found === true ? Math.abs(Number(component.amount) || 0) : null,
-    source_field: String(component?.selected_field || ""),
+    found: component?.found === true || confirmedZero,
+    amount: component?.found === true ? Math.abs(Number(component.amount) || 0) : confirmedZero ? 0 : null,
+    source_field: String(component?.selected_field || (confirmedZero ? "fee_tax_breakdown (affiliate commission field absent; confirmed Rp0)" : "")),
     diagnostic: {
       occurrences: Number(component?.occurrences || 0),
       paths: Array.isArray(component?.paths) ? component.paths : [],
       readiness: String(audit?.readiness || "UNKNOWN"),
       missing_components: audit?.admin_marketplace_total?.missing_components || [],
+      confirmed_zero_no_affiliate_field: confirmedZero,
     },
   };
 };
