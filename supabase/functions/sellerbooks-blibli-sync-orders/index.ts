@@ -14,7 +14,7 @@ function rowFor(pkg:any,item:any){
  const ord=item?.order||{},prod=item?.product||{},logi=item?.logistic||{};
  const orderNo=raw(item?.orderNo,item?.orderNumber,item?.orderId,ord?.orderNo,ord?.orderNumber,ord?.orderId,ord?.id,pkg?.orderNo,pkg?.orderNumber,pkg?.orderId,item?.orderItemNo,item?.orderItemNumber,item?.orderItemId);
  const sku=raw(item?.sellerSku,item?.sellerSKU,item?.sellerSkuCode,item?.skuSeller,item?.merchantSku,item?.itemSku,item?.productSku,item?.skuCode,item?.sku,prod?.sellerSku,prod?.sellerSKU,prod?.sellerSkuCode,prod?.skuSeller,prod?.merchantSku,prod?.itemSku,prod?.productSku,prod?.skuCode,prod?.sku,prod?.id);
- const qty=Math.max(0,Number(raw(item?.qty,item?.quantity,item?.itemQuantity,item?.orderedQuantity,item?.orderQuantity,prod?.qty,prod?.quantity,1))||1);
+ const qty=Math.max(0,Number(raw(item?.qty,item?.quantity,item?.itemQuantity,item?.orderedQuantity,item?.orderQuantity,ord?.quantity,prod?.qty,prod?.quantity,1))||1);
  const price=Number(raw(item?.price?.sellingPrice,item?.sellingPrice,item?.sellingPriceAfterDiscount,item?.productPrice,item?.productSalePrice,item?.price,item?.unitPrice,item?.regularPrice,prod?.sellingPrice,prod?.productPrice,prod?.productSalePrice,prod?.price?.sellingPrice,prod?.price,0))||0;
  const created=iso(raw(item?.createdDate,item?.orderCreatedDate,item?.orderDate,ord?.createdDate,ord?.orderDate,pkg?.createdDate,pkg?.orderCreatedDate,pkg?.orderDate));
  const awb=raw(item?.awbNumber,item?.trackingNumber,item?.shippingLabelNumber,logi?.awbNumber,logi?.trackingNumber,logi?.shippingLabelNumber,logi?.awb,pkg?.awbNumber,pkg?.trackingNumber,pkg?.shippingLabelNumber);
@@ -96,7 +96,7 @@ Deno.serve(async(req:Request)=>{
       order_id:orderId,sku,
       item_keys:Object.keys(item||{}),
       item_id:raw(item?.id,item?.orderItemNo,item?.orderItemId,item?.orderItemNumber,item?.itemId),
-      quantity_candidates:{quantity:item?.quantity,qty:item?.qty,itemQuantity:item?.itemQuantity,orderedQuantity:item?.orderedQuantity,orderQuantity:item?.orderQuantity,product_quantity:item?.product?.quantity,product_qty:item?.product?.qty,combo:item?.combo,comboList:item?.comboList,items:item?.items},
+      quantity_candidates:{quantity:item?.quantity,qty:item?.qty,itemQuantity:item?.itemQuantity,orderedQuantity:item?.orderedQuantity,orderQuantity:item?.orderQuantity,order_quantity:item?.order?.quantity,product_quantity:item?.product?.quantity,product_qty:item?.product?.qty,combo:item?.combo,comboList:item?.comboList,items:item?.items},
       product_keys:Object.keys(item?.product||{}),
       order_keys:Object.keys(item?.order||{})
      });
