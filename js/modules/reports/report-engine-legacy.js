@@ -3024,49 +3024,6 @@ function calculateReportFinancial(options){
    RENDER KARTU KEUANGAN
 ========================================================= */
 
-/*
- * Count current TikTok packages awaiting collection from the latest imported API batch.
- * This display-only metric intentionally ignores report date filters; packing costs
- * and historical financial calculations continue to use filtered transactions.
- */
-let sellerBooksPendingPackingRequest = 0;
-async function sellerBooksRefreshPendingPackingCard(){
-    const requestId=++sellerBooksPendingPackingRequest;
-    try{
-        if(typeof sellerBooksSupabase==="undefined" || !sellerBooksAuthUser?.id) return;
-        const marketplaceFilter=String(document.getElementById("reportMarketplace")?.value||"").trim().toLowerCase();
-        const storeFilter=String(document.getElementById("reportStore")?.value||"").trim().toLowerCase();
-        if(marketplaceFilter && marketplaceFilter!=="all" && !marketplaceFilter.includes("tiktok")) return;
-        const {data:connections,error:connectionError}=await sellerBooksSupabase.from("sellerbooks_api_connections").select("id,store_id,marketplace,marketplace_id").eq("owner_user_id",sellerBooksAuthUser.id).eq("connection_status","CONNECTED");
-        if(connectionError || !Array.isArray(connections)) return;
-        const tiktokConnections=connections.filter(x=>String(x.marketplace||x.marketplace_id||"").toLowerCase().includes("tiktok"));
-        const packingSet=new Set();
-        for(const connection of tiktokConnections){
-            const connectionStore=String(connection.store_id||"").trim().toLowerCase();
-            if(storeFilter && storeFilter!=="all" && storeFilter!==connectionStore) continue;
-            const {data:queue,error:queueError}=await sellerBooksSupabase.from("sellerbooks_api_import_queue").select("headers,rows,created_at,status").eq("owner_user_id",sellerBooksAuthUser.id).eq("connection_id",connection.id).eq("status","IMPORTED").order("created_at",{ascending:false}).limit(1).maybeSingle();
-            if(queueError || !queue || !Array.isArray(queue.headers) || !Array.isArray(queue.rows)) continue;
-            const headerIndex=name=>queue.headers.findIndex(h=>String(h||"").trim().toLowerCase()===name.toLowerCase());
-            const statusIndex=headerIndex("Order Status"), packageIndex=headerIndex("Package ID"), orderIndex=headerIndex("Order ID");
-            if(statusIndex<0) continue;
-            queue.rows.forEach(row=>{
-                if(!Array.isArray(row) || String(row[statusIndex]||"").trim().toUpperCase()!=="AWAITING_COLLECTION") return;
-                const packageId=String((packageIndex>=0?row[packageIndex]:"")||(orderIndex>=0?row[orderIndex]:"")).trim();
-                if(packageId) packingSet.add(String(connection.id)+"|"+packageId);
-            });
-        }
-        if(requestId!==sellerBooksPendingPackingRequest) return;
-        const currentMarketplace=String(document.getElementById("reportMarketplace")?.value||"").trim().toLowerCase();
-        const currentStore=String(document.getElementById("reportStore")?.value||"").trim().toLowerCase();
-        if(currentMarketplace!==marketplaceFilter || currentStore!==storeFilter || !packingSet.size) return;
-        const card=document.getElementById("reportTotalPacking");
-        if(card) card.textContent=packingSet.size.toLocaleString("id-ID");
-        if(window.currentReportFinancial) window.currentReportFinancial.pendingPackingCount=packingSet.size;
-    }catch(error){
-        console.warn("Gagal memperbarui jumlah packing menunggu pengambilan:",error);
-    }
-}
-
 function renderReportFinancial(){
 
     const data =
@@ -3255,8 +3212,6 @@ function renderReportFinancial(){
 
     window.currentReportFinancial =
         data;
-
-    sellerBooksRefreshPendingPackingCard();
 
 }
 
