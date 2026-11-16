@@ -1030,12 +1030,14 @@ function saveSalesImportData(){
                     affiliateCommissionAmount,
 
                 affiliateCommissionStatus:
-                    currentSalesImport.marketplace === "TikTok"
-                        ? (affiliateConfirmed ? "CONFIRMED" : "PENDING")
-                        : "",
+                    affiliateConfirmed
+                        ? "CONFIRMED"
+                        : (/tiktok|shopee/i.test(String(currentSalesImport.marketplace||"")) ? "PENDING" : "CONFIRMED"),
 
                 affiliateCommissionSource:
-                    affiliateConfirmed ? "TIKTOK_FINANCE" : "",
+                    affiliateConfirmed
+                        ? String(affiliateRecord.source||(/shopee/i.test(String(currentSalesImport.marketplace||"")) ? "SHOPEE_ESCROW" : "TIKTOK_FINANCE"))
+                        : (/tiktok|shopee/i.test(String(currentSalesImport.marketplace||"")) ? "" : "NO_AFFILIATE_FEE_REPORTED"),
 
                 affiliateCommissionSourceMode:
                     affiliateConfirmed ? String(affiliateRecord.source_mode||"") : "",
