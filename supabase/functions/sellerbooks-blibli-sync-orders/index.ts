@@ -80,6 +80,7 @@ Deno.serve(async(req:Request)=>{
   }
   const rows:any[]=[],seenItems=new Set<string>(),seenOrderIds=new Set<string>();
   const statusCounts:Record<string,number>={},responseItemKeys:string[][]=[];
+  const quantityDiagnostics:any[]=[];
   let missingOrderNo=0,missingSku=0,missingBoth=0;
   for(const pkg of all){
    const items=Array.isArray(pkg?.orderItems)?pkg.orderItems:(Array.isArray(pkg?.items)?pkg.items:[]);
@@ -90,6 +91,16 @@ Deno.serve(async(req:Request)=>{
     if(responseItemKeys.length<3)responseItemKeys.push({item:Object.keys(item||{}),order:Object.keys(item?.order||{}),product:Object.keys(item?.product||{}),logistic:Object.keys(item?.logistic||{}),flag:Object.keys(item?.flag||{})});
     if(status&&status!=="FP")continue;
     const row=rowFor(pkg,item),orderId=String(row[0]||"").trim(),sku=String(row[1]||"").trim();
+    if(orderId==="12200200814"){
+     quantityDiagnostics.push({
+      order_id:orderId,sku,
+      item_keys:Object.keys(item||{}),
+      item_id:raw(item?.id,item?.orderItemNo,item?.orderItemId,item?.orderItemNumber,item?.itemId),
+      quantity_candidates:{quantity:item?.quantity,qty:item?.qty,itemQuantity:item?.itemQuantity,orderedQuantity:item?.orderedQuantity,orderQuantity:item?.orderQuantity,product_quantity:item?.product?.quantity,product_qty:item?.product?.qty,combo:item?.combo,comboList:item?.comboList,items:item?.items},
+      product_keys:Object.keys(item?.product||{}),
+      order_keys:Object.keys(item?.order||{})
+     });
+    }
     if(!orderId)missingOrderNo++;
     if(!sku)missingSku++;
     if(!orderId&&!sku)missingBoth++;
@@ -101,6 +112,7 @@ Deno.serve(async(req:Request)=>{
     seenItems.add(uniqueKey);rows.push(row);
    }
   }
+  console.log(JSON.stringify({event:"blibli_quantity_audit",target_order_id:"12200200814",quantity_diagnostics:quantityDiagnostics}));
   if(!rows.length){
    const diagnostic={packages_found:all.length,items_seen:all.reduce((n,p)=>n+(Array.isArray(p?.orderItems)?p.orderItems.length:Array.isArray(p?.items)?p.items.length:0),0),status_counts:statusCounts,missing_order_no:missingOrderNo,missing_sku:missingSku,missing_both:missingBoth,sample_item_keys:responseItemKeys,response_pages:responseDiagnostics};
    console.log(JSON.stringify({event:"blibli_sync_diagnostic",diagnostic}));
