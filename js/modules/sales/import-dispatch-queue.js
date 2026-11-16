@@ -25,7 +25,8 @@ function sellerBooksApiImportProfile(marketplace){
         tiktok:{sku:"Seller SKU",qty:"Quantity",price:"Finance Subtotal After Seller Discount"},
         "tiktokshop":{sku:"Seller SKU",qty:"Quantity",price:"Finance Subtotal After Seller Discount"},
         shopee:{sku:"Nomor Referensi SKU",qty:"Jumlah Produk",price:"Subtotal Pesanan"},
-        lazada:{sku:"sellerSku",qty:"__LAZADA_QTY_PER_ROW__",price:"unitPrice"}
+        lazada:{sku:"sellerSku",qty:"__LAZADA_QTY_PER_ROW__",price:"unitPrice"},
+        blibli:{sku:"SKU Seller",qty:"Jumlah Produk",price:"Harga Produk"}
     };
     return profiles[key]||null;
 }
@@ -237,6 +238,8 @@ async function sellerBooksDispatchExcelQueue(opts){
                         method:"PATCH",headers:{"Prefer":"return=minimal"},
                         body:JSON.stringify({status:"PENDING",processing_started_at:null,error_message:result.error||"Retry"})
                     });
+                }else if(result?.ok===false){
+                    throw new Error(result.error||"Import API tidak dapat diproses.");
                 }
             }catch(error){
                 const message=error?.message||String(error);
