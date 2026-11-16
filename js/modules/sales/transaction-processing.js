@@ -1151,7 +1151,23 @@ function saveSalesImportData(){
     const existingTransactionKeys =
         new Set();
 
+    /* TikTok: duplicate policy is whole Order ID, not Order ID + SKU.
+       Keep this scoped to TikTok so other marketplace import identities
+       and Lazada row-level handling remain unchanged. */
+    const existingTikTokOrderIds = new Set();
+
     imports.forEach(function(existingImport){
+        const existingMarketplace=String(existingImport.marketplace||"").trim().toLowerCase();
+        if(
+            existingMarketplace==="tiktok" &&
+            String(existingImport.storeId||"").trim()===String(storeId||"").trim()
+        ){
+            (existingImport.transactions||[]).forEach(function(existingTransaction){
+                const existingOrderId=String(existingTransaction?.orderId||"").trim().toLowerCase();
+                if(existingOrderId)existingTikTokOrderIds.add(existingOrderId);
+            });
+        }
+
 
         (existingImport.transactions || [])
             .forEach(function(existingTransaction){
@@ -1181,6 +1197,20 @@ function saveSalesImportData(){
         new Set();
 
     transactions.forEach(function(transaction){
+
+        /* TikTok: if any SKU line for this Order ID was imported before,
+           skip every line of that Order ID in this later import batch.
+           Multiple distinct SKU lines for a genuinely new Order ID are
+           still retained in the current batch. */
+        const incomingMarketplace=String(transaction?.marketplace||currentSalesImport.marketplace||"").trim().toLowerCase();
+        const incomingOrderId=String(transaction?.orderId||"").trim().toLowerCase();
+        if(
+            incomingMarketplace==="tiktok" &&
+            incomingOrderId &&
+            existingTikTokOrderIds.has(incomingOrderId)
+        ){
+            return;
+        }
 
         /*
            Gunakan identity pusat yang sama dengan Cloud Sync.
