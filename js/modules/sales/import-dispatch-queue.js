@@ -110,10 +110,39 @@ async function sellerBooksDispatchExcelToImportPenjualan(queueItem,showResult,af
             return savedImports.some(function(item){return String(item.id||"")===String(record.id||"");});
         });
     }
+    const isTikTok=/tiktok/i.test(marketplaceName);
+    const rawOrderIndex=headers.indexOf("Order ID");
+    const rawPackageIndex=headers.indexOf("Package ID");
+    const rawQtyIndex=headers.indexOf("Quantity");
+    const rawOrderIds=new Set();
+    const rawPackageIds=new Set();
+    let rawQty=0;
+    if(isTikTok){
+        rows.forEach(function(row){
+            const orderId=String(row?.[rawOrderIndex]||"").trim();
+            const packageId=String(row?.[rawPackageIndex]||"").trim();
+            if(orderId)rawOrderIds.add(orderId);
+            if(packageId)rawPackageIds.add(packageId);
+            const qty=Number(row?.[rawQtyIndex]||0);
+            if(Number.isFinite(qty))rawQty+=qty;
+        });
+    }
+    const newOrderIds=new Set();
+    if(isTikTok&&record){
+        (record.transactions||[]).forEach(function(tx){
+            const orderId=String(tx?.orderId||"").trim();
+            if(orderId)newOrderIds.add(orderId);
+        });
+    }
     const result={
         new_transactions:record?Number(record.rowCount||0):0,
         new_qty:record?Number(record.totalQty||0):0,
         new_packing_count:record?Number(record.uniquePackingCount||0):0,
+        raw_order_count:isTikTok?rawOrderIds.size:0,
+        raw_package_count:isTikTok?rawPackageIds.size:0,
+        raw_qty:isTikTok?rawQty:0,
+        duplicate_order_count:isTikTok?Math.max(0,rawOrderIds.size-newOrderIds.size):0,
+        new_order_count:isTikTok?newOrderIds.size:0,
         import_id:record?.id||null
     };
 
@@ -132,13 +161,18 @@ async function sellerBooksDispatchExcelToImportPenjualan(queueItem,showResult,af
         const title=en?"Order Fetch Results — "+marketplaceName:"Hasil Tarik Order "+marketplaceName;
         const numberLocale=en?"en-US":"id-ID";
         if(result.new_transactions>0){
+            const tiktokRawSummary=isTikTok
+                ? (en
+                    ? "Detected in TikTok's Perlu Dikirim queue: "+result.raw_order_count.toLocaleString(numberLocale)+" unique Order IDs, "+result.raw_package_count.toLocaleString(numberLocale)+" unique Package IDs, "+result.raw_qty.toLocaleString(numberLocale)+" raw units.\nAlready imported: "+result.duplicate_order_count.toLocaleString(numberLocale)+" Order IDs.\n\n"
+                    : "Terdeteksi di antrean Perlu Dikirim TikTok: "+result.raw_order_count.toLocaleString(numberLocale)+" Order ID unik, "+result.raw_package_count.toLocaleString(numberLocale)+" Package ID unik, "+result.raw_qty.toLocaleString(numberLocale)+" PCS mentah.\nSudah pernah diimpor: "+result.duplicate_order_count.toLocaleString(numberLocale)+" Order ID.\n\n")
+                : "";
             sellerBooksAlert(
                 en
-                    ? marketplaceName+" orders were successfully processed by the Sales Import engine.\n\n"+
+                    ? marketplaceName+" orders were successfully processed by the Sales Import engine.\n\n"+tiktokRawSummary+
                       "New packing orders: "+result.new_packing_count.toLocaleString(numberLocale)+"\n"+
                       "New units: "+result.new_qty.toLocaleString(numberLocale)+"\n\n"+
                       "Calculations, COGS, admin fees, packing, snapshots, and reports are handled by the SellerBooks Sales Import engine."
-                    : "Order "+marketplaceName+" berhasil diproses oleh mesin Import Penjualan.\n\n"+
+                    : "Order "+marketplaceName+" berhasil diproses oleh mesin Import Penjualan.\n\n"+tiktokRawSummary+
                       "Packing baru: "+result.new_packing_count.toLocaleString(numberLocale)+"\n"+
                       "PCS baru: "+result.new_qty.toLocaleString(numberLocale)+"\n\n"+
                       "Perhitungan, HPP, admin, packing, snapshot dan laporan dikerjakan oleh mesin Import Penjualan SellerBooks.",
