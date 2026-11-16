@@ -101,8 +101,38 @@ const itemFinanceWeight=(item:any):number=>{
   const sellerDiscount=Number(item?.sku_seller_discount??item?.seller_discount??item?.unit_seller_discount??0)||0;
   return Math.max(0,original*qty-Math.abs(sellerDiscount)*qty);
 };
-async function getFinanceSubtotalsForOrder(c:any,orderId:string,items:any[]){
+const financeAmount=(value:any):number=>{
+  if(value===null||value===undefined||value==="")return 0;
+  const n=Number(String(value).replace(/,/g,"").trim());
+  return Number.isFinite(n)?n:0;
+};
+const financePath=(root:any,path:string):any=>path.split(".").reduce((v:any,k)=>v&&typeof v==="object"?v[k]:undefined,root);
+const financeSum=(rows:any[],path:string)=>{
+  const values=rows.map(row=>financePath(row,path)).filter(v=>v!==undefined&&v!==null&&v!=="");
+  return {found:values.length>0,amount:values.reduce((sum,v)=>sum+financeAmount(v),0)};
+};
+const extractFinanceAffiliate=(data:any,mode:"UNSETTLED_ESTIMATE"|"SETTLED_FINAL")=>{
+  const orderRows=Array.isArray(data?.transactions)?data.transactions:
+    (mode==="UNSETTLED_ESTIMATE"&&data?.order_id?[data]:[]);
+  const skuRows=Array.isArray(data?.sku_transactions)?data.sku_transactions:[];
+  const pick=(path:string)=>{
+    const skuValue=financeSum(skuRows,path),orderValue=financeSum(orderRows,path);
+    if(skuValue.found&&skuValue.amount!==0)return skuValue;
+    if(orderValue.found&&orderValue.amount!==0)return orderValue;
+    return skuValue.found?skuValue:orderValue;
+  };
+  const ads=pick("fee_tax_breakdown.fee.affiliate_ads_commission_amount");
+  const primary=pick("fee_tax_breakdown.fee.affiliate_commission_amount");
+  const selected=ads.found&&ads.amount!==0?{...ads,field:"fee_tax_breakdown.fee.affiliate_ads_commission_amount"}:
+    primary.found&&primary.amount!==0?{...primary,field:"fee_tax_breakdown.fee.affiliate_commission_amount"}:
+    ads.found?{...ads,field:"fee_tax_breakdown.fee.affiliate_ads_commission_amount"}:
+    {...primary,field:"fee_tax_breakdown.fee.affiliate_commission_amount"};
+  return selected.found?{found:true,amount:Math.abs(selected.amount),source_field:selected.field,source_mode:mode}:null;
+};
+async function getFinanceSubtotalsForOrder(c:any,orderId:string,items:any[],affiliateByOrderId:Record<string,any>){
   const data=await financeGet(c,"/finance/202501/orders/"+encodeURIComponent(orderId)+"/statement_transactions");
+  const affiliate=extractFinanceAffiliate(data,"SETTLED_FINAL");
+  if(affiliate)affiliateByOrderId[String(c.store_id)+"::"+orderId]=affiliate;
   const skuRows=Array.isArray(data?.sku_transactions)?data.sku_transactions:[];
   if(skuRows.length){
     const bySku=new Map<string,number>();
@@ -240,6 +270,34 @@ async function enqueueTikTokExcelPayload(c:any,rows:any[],foundCount:number,sk:s
   return {queue_id:item?.id||null,file_name:fileName,rows_count:rows.length,orders_found:foundCount};
 }
 
+
+async function refreshTikTokIfNeeded(z:any,connection:any,base:string,sk:string){
+  const now=Math.floor(Date.now()/1000),expiry=Number(z.access_token_expire_in||0);
+  if(!expiry||now<expiry-600)return z;
+  if(!z.refresh_token)throw Error("TIKTOK_REFRESH_TOKEN_MISSING");
+  const lock=await rest(sk,"rpc/sellerbooks_acquire_marketplace_token_lock",{method:"POST",body:JSON.stringify({p_connection_id:connection.id,p_lease_seconds:90})});
+  if(!lock.ok)throw Error("TIKTOK_TOKEN_LOCK_ERROR");
+  if(!await lock.json().catch(()=>false))throw Error("TIKTOK_TOKEN_REFRESH_IN_PROGRESS");
+  try{
+    const appKey=String(z.app_key||K||""),appSecret=Deno.env.get("TIKTOK_SHOP_APP_SECRET")||"";
+    if(!appKey||!appSecret)throw Error("TIKTOK_APP_CREDENTIALS_MISSING");
+    const url=new URL("https://auth.tiktok-shops.com/api/v2/token/refresh");
+    for(const [key,value] of Object.entries({app_key:appKey,app_secret:appSecret,refresh_token:z.refresh_token,grant_type:"refresh_token"}))url.searchParams.set(key,String(value));
+    const response=await fetch(url,{method:"GET"});
+    const raw=await txt(response);let body:any;try{body=JSON.parse(raw)}catch{body={}};
+    const data=body?.data??body;
+    if(!response.ok||Number(body?.code??0)!==0||!data?.access_token||!data?.refresh_token)throw Error("TIKTOK_TOKEN_REFRESH_FAILED:"+String(body?.message||body?.error||response.status));
+    const updated={...z,access_token:data.access_token,refresh_token:data.refresh_token,
+      access_token_expire_in:Number(data.access_token_expire_in||data.access_token_expire_at||data.expire_in||0)||z.access_token_expire_in,
+      refresh_token_expire_in:Number(data.refresh_token_expire_in||data.refresh_token_expire_at||0)||z.refresh_token_expire_in,
+      token_received_at:new Date().toISOString()};
+    const save=await rest(sk,"rpc/sellerbooks_update_marketplace_vault_credential",{method:"POST",body:JSON.stringify({p_connection_id:connection.id,p_marketplace:"TikTok Shop",p_credential:updated})});
+    if(!save.ok)throw Error("TIKTOK_TOKEN_SAVE_FAILED:"+String(await txt(save)).slice(0,200));
+    console.info(JSON.stringify({service:"sellerbooks-tiktok-sync-orders",event:"token_refreshed",connection_id:connection.id}));
+    return updated;
+  }finally{await rest(sk,"rpc/sellerbooks_release_marketplace_token_lock",{method:"POST",body:JSON.stringify({p_connection_id:connection.id})});}
+}
+
 async function run(c:any,from:number,to:number,token:string,pk:string,sk:string){
   if(!c.vault_secret_id) throw Error("TIKTOK_CREDENTIAL_VAULT_ID_MISSING");
   const vr=await rest(sk,"rpc/sellerbooks_tiktok_read_credential",{method:"POST",body:JSON.stringify({p_connection_id:c.id})});
@@ -248,6 +306,7 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
   if(!z||typeof z!=="object") throw Error("TIKTOK_CREDENTIAL_INVALID_JSON");
   if(!z.access_token||!z.shop_cipher) throw Error("TIKTOK_CREDENTIAL_INCOMPLETE");
   z.app_key=z.app_key||K; z.api_base_url=(z.api_base_url||B).replace(/\/$/,"");
+   z=await refreshTikTokIfNeeded(z,c,S,sk);
 
   /*
    * SELLERBOOKS TIKTOK SYNC CONTRACT
@@ -293,13 +352,15 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
   }
   const found=[...foundById.values()];
   const rows:any[]=[];
+  const affiliateByOrderId:Record<string,any>={};
   const unsettledFinanceByOrder=new Map<string,any>();
   let unsettledFinancePageToken="";
   let unsettledFinanceComplete=false;
   let unsettledFinancePages=0;
-  async function findUnsettledFinanceOrder(targetOrderId:string){
-    while(!unsettledFinanceComplete&&unsettledFinancePages<100){
-      const query:Record<string,string>={page_size:"100",sort_field:"order_create_time",sort_order:"DESC",search_time_ge:"1735689600",search_time_lt:String(Math.floor(Date.now()/1000)+1)};
+  async function findUnsettledFinanceOrder(targetOrderId:string,orderCreatedAt:number){
+    const searchStart=Math.max(1735689600,(orderCreatedAt||Math.floor(Date.now()/1000))-90*86400);
+    while(!unsettledFinanceComplete&&unsettledFinancePages<30){
+      const query:Record<string,string>={page_size:"100",sort_field:"order_create_time",sort_order:"DESC",search_time_ge:String(searchStart),search_time_lt:String(Math.floor(Date.now()/1000)+1)};
       if(unsettledFinancePageToken) query.page_token=unsettledFinancePageToken;
       const page=await financeGet(z,"/finance/202507/orders/unsettled",query);
       unsettledFinancePages++;
@@ -311,8 +372,26 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
     }
     return unsettledFinanceByOrder.get(targetOrderId)||null;
   }
+  async function findStatementFinanceOrder(targetOrderId:string, orderCreatedAt:number, items:any[]){
+    const start=Math.max(1735689600,(orderCreatedAt||Math.floor(Date.now()/1000))-90*86400);let listToken="";
+    for(let pageNo=0;pageNo<10;pageNo++){
+      const query:Record<string,string>={statement_time_ge:String(start),statement_time_lt:String(Math.floor(Date.now()/1000)+1),sort_field:"statement_time",sort_order:"ASC",page_size:"100"};if(listToken)query.page_token=listToken;
+      const list=await financeGet(z,"/finance/202309/statements",query),data=list?.data||{},statements=Array.isArray(data?.statements)?data.statements:[];
+      for(const statement of statements){const statementId=String(statement?.id||"").trim();if(!statementId)continue;let detailToken="";
+        for(let detailPage=0;detailPage<10;detailPage++){const dq:Record<string,string>={sort_field:"order_create_time",sort_order:"ASC",page_size:"100"};if(detailToken)dq.page_token=detailToken;
+          const page=await financeGet(z,"/finance/202501/statements/"+encodeURIComponent(statementId)+"/statement_transactions",dq),dd=page?.data||{},tx=Array.isArray(dd?.transactions)?dd.transactions:[];
+          const matches=tx.filter((row:any)=>String(row?.order_id||row?.adjustment_order_id||"").trim()===targetOrderId);
+          if(matches.length){const skuRows=matches.flatMap((row:any)=>Array.isArray(row?.sku_transactions)?row.sku_transactions:[]);
+            if(skuRows.length){const bySku=new Map<string,number>();for(const row of skuRows){const sid=String(row?.sku_id||"").trim(),amount=financeSellerSubtotal(row);if(sid&&amount!==null)bySku.set(sid,(bySku.get(sid)||0)+amount);}const mapped=items.map(item=>bySku.get(skuId(item))??null);if(mapped.every(v=>v!==null))return mapped as number[];if(items.length===1){const amount=financeSellerSubtotal(skuRows[0]);if(amount!==null)return [amount];}}
+            const amounts=matches.map((row:any)=>financeSellerSubtotal(row)).filter((v:any)=>v!==null) as number[];if(amounts.length){const total=amounts.reduce((x,y)=>x+y,0);if(items.length===1)return [total];const weights=items.map(itemFinanceWeight),weightTotal=weights.reduce((x,y)=>x+y,0);if(weightTotal>0){let allocated=0;return weights.map((w,i)=>{if(i===weights.length-1)return Number((total-allocated).toFixed(2));const value=Number((total*w/weightTotal).toFixed(2));allocated+=value;return value;});}}return null;
+          }detailToken=String(dd?.next_page_token||"");if(!detailToken)break;
+        }
+      }listToken=String(data?.next_page_token||"");if(!listToken)break;
+    }return null;
+  }
   for(const order of found){
     const id=oid(order); if(!id) continue;
+    const rawCreated=Number(order?.create_time??order?.created_time??order?.order_create_time??0);const created=Math.floor(rawCreated>1000000000000?rawCreated/1000:rawCreated);
     const d=await detail(z,id);
     const detailOrders=extractOrders(d);
     const orders=detailOrders.length?detailOrders:[order];
@@ -321,24 +400,25 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
       const financeItems=items.length?items:[detailOrder];
       let financeAmounts:number[]|null=null;
       let settledFinanceError="";
-      try{financeAmounts=await getFinanceSubtotalsForOrder(z,id,financeItems);}
+      try{financeAmounts=await getFinanceSubtotalsForOrder(z,id,financeItems,affiliateByOrderId);}
       catch(error){settledFinanceError=String(error instanceof Error?error.message:error);}
+      let unsettledFinanceRow:any=null;
+      if(!affiliateByOrderId[String(z.store_id)+"::"+id]){
+        try{
+          unsettledFinanceRow=await findUnsettledFinanceOrder(id,created);
+          if(unsettledFinanceRow){
+            const affiliate=extractFinanceAffiliate({order_id:id,...unsettledFinanceRow},"UNSETTLED_ESTIMATE");
+            if(affiliate)affiliateByOrderId[String(z.store_id)+"::"+id]=affiliate;
+          }
+        }catch(affiliateReadError){
+          console.warn("TikTok affiliate field unavailable during order sync:",id,String(affiliateReadError));
+        }
+      }
       if(!financeAmounts){
-        const unsettled=await findUnsettledFinanceOrder(id);
-        if(!unsettled) throw Error("TIKTOK_FINANCE_SUBTOTAL_PENDING:"+id+(settledFinanceError?":"+settledFinanceError:""));
-        const orderTotal=financeSellerSubtotal(unsettled);
-        if(orderTotal===null) throw Error("TIKTOK_FINANCE_SUBTOTAL_FIELD_MISSING:"+id);
-        const weights=financeItems.map(itemFinanceWeight);
-        const weightTotal=weights.reduce((sum,value)=>sum+value,0);
-        if(financeItems.length===1) financeAmounts=[orderTotal];
-        else if(weightTotal>0){
-          let allocated=0;
-          financeAmounts=weights.map((weight,index)=>{
-            if(index===weights.length-1) return Number((orderTotal-allocated).toFixed(2));
-            const amount=Number((orderTotal*weight/weightTotal).toFixed(2));
-            allocated+=amount; return amount;
-          });
-        }else throw Error("TIKTOK_FINANCE_MULTI_SKU_ALLOCATION_UNAVAILABLE:"+id);
+        const unsettled=unsettledFinanceRow||await findUnsettledFinanceOrder(id,created);
+        if(unsettled){const orderTotal=financeSellerSubtotal(unsettled);if(orderTotal!==null){const weights=financeItems.map(itemFinanceWeight),weightTotal=weights.reduce((sum,value)=>sum+value,0);if(financeItems.length===1)financeAmounts=[orderTotal];else if(weightTotal>0){let allocated=0;financeAmounts=weights.map((weight,index)=>{if(index===weights.length-1)return Number((orderTotal-allocated).toFixed(2));const amount=Number((orderTotal*weight/weightTotal).toFixed(2));allocated+=amount;return amount;});}else throw Error("TIKTOK_FINANCE_MULTI_SKU_ALLOCATION_UNAVAILABLE:"+id);}}
+        if(!financeAmounts)financeAmounts=await findStatementFinanceOrder(id,created,financeItems);
+        if(!financeAmounts)throw Error("TIKTOK_FINANCE_SUBTOTAL_PENDING:"+id+(settledFinanceError?":"+settledFinanceError:""));
       }
       if(items.length){
         for(let index=0;index<items.length;index++){
@@ -358,7 +438,7 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
   const queued=await enqueueTikTokExcelPayload(c,rows,found.length,sk);
   const now=new Date().toISOString();
   await rest(sk,"sellerbooks_api_connections?id=eq."+encodeURIComponent(c.id),{method:"PATCH",body:JSON.stringify({last_sync_at:now,last_success_at:now,last_error:null,updated_at:now})});
-  return {connection_id:c.id,store_id:c.store_id,status:"RAW_FILE_READY",orders_found:found.length,rows_found:rows.length,queue_id:queued.queue_id,file_name:queued.file_name,finance_orders:financeOrders,engine:"SELLERBOOKS_IMPORT_PENJUALAN"};
+  return {connection_id:c.id,store_id:c.store_id,status:"RAW_FILE_READY",orders_found:found.length,rows_found:rows.length,queue_id:queued.queue_id,file_name:queued.file_name,finance_orders:financeOrders,affiliate_by_order_id:affiliateByOrderId,engine:"SELLERBOOKS_IMPORT_PENJUALAN"};
 }
 Deno.serve(async req=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:CORS});
