@@ -325,12 +325,27 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
    * tetap tertangkap, termasuk order lama yang masih menunggu pengiriman/pengambilan.
    */
   const fetchNeedToShip=async(orderStatus:string)=>{
-    const result:any[]=[]; let page_token="";
-    for(let n=0;n<100;n++){
+    const result:any[]=[];
+    let page_token="";
+    const seenPageTokens=new Set<string>();
+    /* Fetch every page, not just the first 100 orders.
+       No date filter: status is the only order-selection criterion. */
+    /* Continue until TikTok has no next_page_token.
+       There is no fixed order/page cap; the repeated-token guard only
+       prevents an accidental infinite pagination loop. */
+    while(true){
       const body:any={order_status:orderStatus};
       const d=await api(z,"/order/202309/orders/search",{...body,__query:{page_size:100,sort_field:"create_time",sort_order:"ASC",...(page_token?{page_token}:{})}});
-      const a=arr(d?.data); result.push(...a); page_token=String(d?.data?.next_page_token||"");
-      if(!page_token||!a.length) break;
+      const pageData=d?.data??{};
+      const pageOrders=arr(pageData);
+      result.push(...pageOrders);
+      const nextPageToken=String(pageData?.next_page_token||"");
+      if(!nextPageToken) break;
+      if(seenPageTokens.has(nextPageToken)){
+        throw Error("TIKTOK_ORDER_PAGE_TOKEN_REPEATED:"+orderStatus);
+      }
+      seenPageTokens.add(nextPageToken);
+      page_token=nextPageToken;
     }
     return result;
   };
@@ -353,6 +368,7 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
   const found=[...foundById.values()];
   const rows:any[]=[];
   const affiliateByOrderId:Record<string,any>={};
+  const financePendingOrders:Array<{order_id:string;reason:string;order_create_time:number}> = [];
   const unsettledFinanceByOrder=new Map<string,any>();
   let unsettledFinancePageToken="";
   let unsettledFinanceComplete=false;
@@ -415,10 +431,47 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
         }
       }
       if(!financeAmounts){
-        const unsettled=unsettledFinanceRow||await findUnsettledFinanceOrder(id,created);
-        if(unsettled){const orderTotal=financeSellerSubtotal(unsettled);if(orderTotal!==null){const weights=financeItems.map(itemFinanceWeight),weightTotal=weights.reduce((sum,value)=>sum+value,0);if(financeItems.length===1)financeAmounts=[orderTotal];else if(weightTotal>0){let allocated=0;financeAmounts=weights.map((weight,index)=>{if(index===weights.length-1)return Number((orderTotal-allocated).toFixed(2));const amount=Number((orderTotal*weight/weightTotal).toFixed(2));allocated+=amount;return amount;});}else throw Error("TIKTOK_FINANCE_MULTI_SKU_ALLOCATION_UNAVAILABLE:"+id);}}
-        if(!financeAmounts)financeAmounts=await findStatementFinanceOrder(id,created,financeItems);
-        if(!financeAmounts)throw Error("TIKTOK_FINANCE_SUBTOTAL_PENDING:"+id+(settledFinanceError?":"+settledFinanceError:""));
+        let unsettled=unsettledFinanceRow;
+        let financeLookupError="";
+        if(!unsettled){
+          try{unsettled=await findUnsettledFinanceOrder(id,created);}
+          catch(error){financeLookupError=String(error instanceof Error?error.message:error).slice(0,160);}
+        }
+        if(unsettled){
+          const orderTotal=financeSellerSubtotal(unsettled);
+          if(orderTotal!==null){
+            const weights=financeItems.map(itemFinanceWeight);
+            const weightTotal=weights.reduce((sum,value)=>sum+value,0);
+            if(financeItems.length===1){
+              financeAmounts=[orderTotal];
+            }else if(weightTotal>0){
+              let allocated=0;
+              financeAmounts=weights.map((weight,index)=>{
+                if(index===weights.length-1)return Number((orderTotal-allocated).toFixed(2));
+                const amount=Number((orderTotal*weight/weightTotal).toFixed(2));
+                allocated+=amount;
+                return amount;
+              });
+            }
+          }
+        }
+        if(!financeAmounts){
+          try{financeAmounts=await findStatementFinanceOrder(id,created,financeItems);}
+          catch(error){
+            financeLookupError=String(error instanceof Error?error.message:error).slice(0,160)||financeLookupError;
+          }
+        }
+        if(!financeAmounts){
+          if(!financePendingOrders.some(item=>item.order_id===id)){
+            financePendingOrders.push({
+              order_id:id,
+              reason:financeLookupError?"FINANCE_LOOKUP_TEMPORARILY_UNAVAILABLE":"FINANCE_SUBTOTAL_NOT_READY",
+              order_create_time:created
+            });
+          }
+          console.warn("TikTok order held until Finance subtotal is available:",id,financeLookupError||settledFinanceError||"not published yet");
+          continue;
+        }
       }
       if(items.length){
         for(let index=0;index<items.length;index++){
@@ -427,18 +480,54 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
       }else rows.push(makeTikTokExcelRow({...order,...detailOrder},detailOrder,financeAmounts[0]));
     }
   }
-  if(!rows.length) return {connection_id:c.id,store_id:c.store_id,status:"NO_ORDERS",orders_found:found.length,rows_found:0};
+  if(!rows.length){
+    if(financePendingOrders.length){
+      const now=new Date().toISOString();
+      const pendingIds=financePendingOrders.map(item=>item.order_id);
+      await rest(sk,"sellerbooks_api_connections?id=eq."+encodeURIComponent(c.id),{
+        method:"PATCH",
+        body:JSON.stringify({
+          last_sync_at:now,
+          last_error:"TIKTOK_FINANCE_PENDING:"+pendingIds.join(","),
+          updated_at:now
+        })
+      });
+      return {
+        connection_id:c.id,store_id:c.store_id,status:"FINANCE_PENDING",
+        orders_found:found.length,rows_found:0,
+        finance_pending_orders:financePendingOrders,
+        finance_pending_count:financePendingOrders.length
+      };
+    }
+    return {connection_id:c.id,store_id:c.store_id,status:"NO_ORDERS",orders_found:found.length,rows_found:0};
+  }
+  const pendingFinanceIds=new Set(financePendingOrders.map(item=>item.order_id));
   const financeOrders=found.map((order:any)=>{
+    const orderId=oid(order);
     const rawTime=Number(order?.create_time??order?.created_time??order?.order_create_time??0);
     const orderCreateTime=Number.isFinite(rawTime)
       ? Math.floor(rawTime>1000000000000?rawTime/1000:rawTime)
       : 0;
-    return {order_id:oid(order),order_create_time:orderCreateTime};
-  }).filter((item:any)=>!!item.order_id);
+    return {order_id:orderId,order_create_time:orderCreateTime};
+  }).filter((item:any)=>!!item.order_id&&!pendingFinanceIds.has(item.order_id));
   const queued=await enqueueTikTokExcelPayload(c,rows,found.length,sk);
   const now=new Date().toISOString();
-  await rest(sk,"sellerbooks_api_connections?id=eq."+encodeURIComponent(c.id),{method:"PATCH",body:JSON.stringify({last_sync_at:now,last_success_at:now,last_error:null,updated_at:now})});
-  return {connection_id:c.id,store_id:c.store_id,status:"RAW_FILE_READY",orders_found:found.length,rows_found:rows.length,queue_id:queued.queue_id,file_name:queued.file_name,finance_orders:financeOrders,affiliate_by_order_id:affiliateByOrderId,engine:"SELLERBOOKS_IMPORT_PENJUALAN"};
+  const pendingSummary=financePendingOrders.length
+    ? "TIKTOK_FINANCE_PENDING:"+financePendingOrders.map(item=>item.order_id).join(",")
+    : null;
+  await rest(sk,"sellerbooks_api_connections?id=eq."+encodeURIComponent(c.id),{
+    method:"PATCH",
+    body:JSON.stringify({last_sync_at:now,last_success_at:now,last_error:pendingSummary,updated_at:now})
+  });
+  return {
+    connection_id:c.id,store_id:c.store_id,status:"RAW_FILE_READY",
+    orders_found:found.length,rows_found:rows.length,
+    queue_id:queued.queue_id,file_name:queued.file_name,
+    finance_orders:financeOrders,affiliate_by_order_id:affiliateByOrderId,
+    finance_pending_orders:financePendingOrders,
+    finance_pending_count:financePendingOrders.length,
+    engine:"SELLERBOOKS_IMPORT_PENJUALAN"
+  };
 }
 Deno.serve(async req=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:CORS});
