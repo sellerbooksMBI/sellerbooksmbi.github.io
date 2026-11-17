@@ -30,9 +30,16 @@ function parseCredential(raw:string){
   return c;
 }
 
-/* Shopee access tokens are short-lived. Rotate them before each pull and
-   persist BOTH returned tokens so the next refresh remains valid. */
-async function refreshShopeeCredential(c:any, rawCredential:any, connectionId:string, base:string, serviceKey:string){
+/* Refresh only when the current access token is close to expiry.
+   A scheduled keepalive rotates the refresh token independently of order pulls. */
+async function refreshShopeeCredential(c:any, rawCredential:any, connectionId:string, vaultSecretId:string, base:string, serviceKey:string){
+  const receivedAt=Date.parse(String(rawCredential?.token_received_at||""));
+  const expireIn=Number(rawCredential?.expire_in||0);
+  const accessExpiresAt=receivedAt+expireIn*1000;
+  if(Number.isFinite(accessExpiresAt)&&expireIn>0&&accessExpiresAt>Date.now()+10*60*1000){
+    console.info(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"token_refresh_skipped",shop_id:c.shop_id,reason:"access_token_still_valid"}));
+    return c;
+  }
   if(!c.refresh_token)throw Error("SHOPEE_REFRESH_TOKEN_MISSING_RECONNECT_REQUIRED");
   const path="/api/v2/auth/access_token/get";
   const timestamp=Math.floor(Date.now()/1000);
@@ -48,14 +55,36 @@ async function refreshShopeeCredential(c:any, rawCredential:any, connectionId:st
   if(!response.ok||data?.error||!data?.access_token||!data?.refresh_token){
     const detail=String(data?.message||data?.msg||data?.error||response.status);
     console.error(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"token_refresh_failed",shop_id:c.shop_id,status:response.status,detail}));
+    if(/invalid|expired|refresh token/i.test(detail)){
+      // A scheduled keepalive or another browser may have rotated the one-use
+      // refresh token at the same time. Re-read Vault before asking for OAuth again.
+      for(let attempt=0;attempt<3;attempt++){
+        await new Promise(resolve=>setTimeout(resolve,350));
+        const latestResponse=await rest(base,serviceKey,"rpc/sellerbooks_get_vault_secret",{
+          method:"POST",body:JSON.stringify({p_secret_id:vaultSecretId})
+        });
+        if(!latestResponse.ok)break;
+        const latestRaw=await txt(latestResponse);
+        let latestValue:any;try{latestValue=JSON.parse(latestRaw)}catch{latestValue=null}
+        const latestText=typeof latestValue==="string"?latestValue:latestValue;
+        let latest:any=null;
+        try{latest=typeof latestText==="string"?JSON.parse(latestText):latestText}catch{}
+        const latestRefresh=String(latest?.refresh_token||"").trim();
+        const latestReceived=String(latest?.token_received_at||"");
+        if(latestRefresh&&latestRefresh!==c.refresh_token&&latestReceived!==String(rawCredential?.token_received_at||"")){
+          console.info(JSON.stringify({service:"sellerbooks-shopee-sync-orders",event:"token_refresh_recovered_after_rotation",shop_id:c.shop_id}));
+          return parseCredential(JSON.stringify(latest));
+        }
+      }
+    }
     throw Error("SHOPEE_TOKEN_REFRESH_FAILED:"+detail+( /invalid|expired|refresh token/i.test(detail)?"_RECONNECT_SHOPEE_REQUIRED":""));
   }
   if(data?.shop_id&&String(data.shop_id)!==String(c.shop_id))throw Error("SHOPEE_REFRESH_SHOP_ID_MISMATCH");
   const next={...(rawCredential&&typeof rawCredential==="object"?rawCredential:{}),
     provider:"shopee",auth_type:"oauth",partner_id:c.partner_id,partner_key:c.partner_key,shop_id:c.shop_id,
     access_token:String(data.access_token),refresh_token:String(data.refresh_token),
-    expire_in:data.expire_in||null,token_received_at:new Date().toISOString(),
-    api_base_url:c.api_base_url,environment:SHOPEE_ENVIRONMENT};
+    expire_in:data.expire_in||null,refresh_token_expire_in:data.refresh_token_expire_in||null,
+    token_received_at:new Date().toISOString(),api_base_url:c.api_base_url,environment:SHOPEE_ENVIRONMENT};
   const saved=await rest(base,serviceKey,"rpc/sellerbooks_update_marketplace_vault_credential",{
     method:"POST",body:JSON.stringify({p_connection_id:connectionId,p_marketplace:"Shopee",p_credential:next})});
   const savedText=await txt(saved);
@@ -215,10 +244,11 @@ Deno.serve(async req=>{
     let parsedCredential:any=null;try{parsedCredential=JSON.parse(rawCredential)}catch{}
     const credentialText=typeof parsedCredential==="string"?parsedCredential:parsedCredential;
     if(!vr.ok||!credentialText)return out({ok:false,error:"Shopee Credential Vault tidak ditemukan",detail:!vr.ok?String(credentialText||rawCredential).slice(0,250):"empty_secret"},400);
-    const credentialSource=typeof credentialText==="object"&&credentialText!==null?credentialText:{};
-    let credential=parseCredential(typeof credentialText==="string"?credentialText:JSON.stringify(credentialText));
+    let credentialSource:any;
+    try{credentialSource=typeof credentialText==="string"?JSON.parse(credentialText):credentialText}catch{return out({ok:false,error:"Shopee Credential Vault tidak valid"},400)}
+    let credential=parseCredential(JSON.stringify(credentialSource));
     if(connection.external_store_id&&String(credential.shop_id)!==String(connection.external_store_id))return out({ok:false,error:"Shop ID credential tidak sama dengan external_store_id koneksi Shopee"},400);
-    credential=await refreshShopeeCredential(credential,credentialSource,String(connection.id),base,secret);
+    credential=await refreshShopeeCredential(credential,credentialSource,String(connection.id),String(connection.vault_secret_id),base,secret);
     const now=Math.floor(Date.now()/1000);
     // Match TikTok's date-independent "Perlu Dikirim" behavior.
     // Shopee requires each get_order_list request to use a maximum 15-day window,
