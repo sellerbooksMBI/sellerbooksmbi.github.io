@@ -326,7 +326,10 @@ async function syncTikTokOrdersNow(storeId){
 /* Shopee affiliate amounts are read from payment/get_escrow_detail_batch.
    Update only Shopee transactions; TikTok affiliate flow remains untouched. */
 async function sellerBooksApplyShopeeAffiliateMap(storeId,affiliateByOrderId,checkedOrderIds){
-    const mapping=affiliateByOrderId&&typeof affiliateByOrderId==="object"?affiliateByOrderId:{};
+    const rawMapping=affiliateByOrderId&&typeof affiliateByOrderId==="object"?affiliateByOrderId:{};
+    const mapping=window.SellerBooksAffiliate
+        ? window.SellerBooksAffiliate.normalizeBatch("Shopee",rawMapping,checkedOrderIds)
+        : rawMapping;
     const ids=new Set((Array.isArray(checkedOrderIds)?checkedOrderIds:[]).map(x=>String(x||"").trim()).filter(Boolean));
     Object.keys(mapping).forEach(id=>ids.add(String(id||"").trim()));
     if(!ids.size)return {checked:0,found:0,zero:0,pending:0,updated:0};
