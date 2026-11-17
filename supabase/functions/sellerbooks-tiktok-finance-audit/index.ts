@@ -261,7 +261,7 @@ const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" 
   const candidates = Object.keys(skuCandidates).length ? skuCandidates : orderCandidates;
   const candidatePaths = Object.keys(candidates);
   const priority = candidatePaths.sort((a,b) => {
-    const rank=(path:string) => /(^|\\.)affiliate_commission_amount$/i.test(path)?0:
+    const rank=(path:string) => (path==="affiliate_commission_amount" || path.endsWith(".affiliate_commission_amount"))?0:
       /creator.*commission/i.test(path)?1:
       /affiliate_ads_commission_amount/i.test(path)?2:
       /affiliate_commission_before_pit_amount/i.test(path)?3:4;
@@ -273,7 +273,7 @@ const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" 
   const dynamicFound = !!dynamicField && Number.isFinite(Number(dynamicField.amount));
   const componentField = String(component?.selected_field || "");
   const componentIsAdsOnly = /affiliate_ads_commission_amount/i.test(componentField);
-  const dynamicIsCreatorCommission = /(^|\\.)affiliate_commission_amount$/i.test(dynamicPath);
+  const dynamicIsCreatorCommission = dynamicPath==="affiliate_commission_amount" || dynamicPath.endsWith(".affiliate_commission_amount");
   /*
    * Creator commission is the actual affiliate fee for these Seller Center
    * orders. The Ads commission field can be explicitly present as zero while
