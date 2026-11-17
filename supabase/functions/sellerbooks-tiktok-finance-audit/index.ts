@@ -134,12 +134,13 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
   };
   const affiliateAds = feeRowsFor("fee_tax_breakdown.fee.affiliate_ads_commission_amount");
   const affiliatePrimary = feeRowsFor("fee_tax_breakdown.fee.affiliate_commission_amount");
-  // SellerBooks' verified TikTok affiliate-cost source is affiliate_ads_commission_amount.
-  // Prefer this field even when the generic affiliate commission field is also populated;
-  // never add the two fields together or silently substitute a different fee category.
-  const affiliate = affiliateAds.found
-    ? { ...affiliateAds, selected_field: "fee_tax_breakdown.fee.affiliate_ads_commission_amount" }
-    : { ...affiliatePrimary, selected_field: "fee_tax_breakdown.fee.affiliate_commission_amount" };
+  // Creator affiliate fee is reported in affiliate_commission_amount.
+  // affiliate_ads_commission_amount is a separate Ads commission component and may be
+  // zero while creator affiliate is charged. Prefer creator commission when present;
+  // use Ads commission only as a fallback when the creator field is absent.
+  const affiliate = affiliatePrimary.found
+    ? { ...affiliatePrimary, selected_field: "fee_tax_breakdown.fee.affiliate_commission_amount" }
+    : { ...affiliateAds, selected_field: "fee_tax_breakdown.fee.affiliate_ads_commission_amount" };
   const processingStandard = feeRowsFor("fee_tax_breakdown.fee.transaction_fee_amount");
   const infrastructureFee = feeRowsFor("fee_tax_breakdown.fee.vn_fix_infrastructure_fee");
   // In the tested Indonesia transaction, Seller Center's order-processing fee
@@ -260,9 +261,10 @@ const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" 
   const candidates = Object.keys(skuCandidates).length ? skuCandidates : orderCandidates;
   const candidatePaths = Object.keys(candidates);
   const priority = candidatePaths.sort((a,b) => {
-    const rank=(path:string) => /affiliate_ads_commission_amount/i.test(path)?0:
-      /affiliate_commission_amount/i.test(path)?1:
-      /creator.*commission/i.test(path)?2:3;
+    const rank=(path:string) => /(^|\\.)affiliate_commission_amount$/i.test(path)?0:
+      /creator.*commission/i.test(path)?1:
+      /affiliate_ads_commission_amount/i.test(path)?2:
+      /affiliate_commission_before_pit_amount/i.test(path)?3:4;
     return rank(a)-rank(b);
   });
   const dynamicPath = priority[0] || "";
