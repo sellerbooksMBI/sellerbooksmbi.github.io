@@ -116,9 +116,13 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
             if(index>=pending.length)return;
             const item=pending[index];
             try{
-                lookupResults[index]={result:await window.sellerBooksFetchTikTokAffiliate(
-                    item.orderId,item.orderCreateTime,storeId
-                )};
+                lookupResults[index]={result:window.SellerBooksAffiliate
+                    ? await window.SellerBooksAffiliate.lookup("TikTok",item.orderId,{
+                        storeId:storeId,orderCreateTime:item.orderCreateTime
+                    })
+                    : await window.sellerBooksFetchTikTokAffiliate(
+                        item.orderId,item.orderCreateTime,storeId
+                    )};
             }catch(error){
                 lookupResults[index]={error:error};
             }
