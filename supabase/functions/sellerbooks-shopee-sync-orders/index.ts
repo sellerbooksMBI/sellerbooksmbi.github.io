@@ -109,10 +109,6 @@ async function getAffiliateByOrderId(c:any,ids:string[]){
         if(amount!==undefined&&amount!==null&&String(amount).trim()!==""){
           const n=Number(amount);
           if(Number.isFinite(n))result[orderId]={amount:Math.abs(n),status:"CONFIRMED",source:"SHOPEE_ESCROW",source_field:sourceField};
-        }else if(income&&typeof income==="object"&&Object.keys(income).length>0){
-          /* A successful exact-order escrow detail with an income object but
-             no AMS commission field confirms that this order has Rp0 affiliate. */
-          result[orderId]={amount:0,status:"CONFIRMED",source:"SHOPEE_ESCROW",source_field:"order_income (affiliate commission absent; confirmed Rp0)"};
         }
       }
     }catch(e){
