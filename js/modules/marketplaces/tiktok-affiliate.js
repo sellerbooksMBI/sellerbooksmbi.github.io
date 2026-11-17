@@ -233,10 +233,12 @@ window.sellerBooksApplyTikTokAffiliateForImportedOrders = async function(storeId
 };
 
 
-/* Manual, explicit retry for TikTok affiliate rows still pending in the report.
-   Opening/waiting on the report does not call TikTok Finance; this action does.
+/* Retry pending TikTok affiliate rows from the report.
+   Can run automatically when the report is opened, or manually by the user.
    Only CONFIRMED Finance results are written. Missing API fields remain PENDING. */
-window.sellerBooksRetryPendingTikTokAffiliateReport=async function(){
+window.sellerBooksRetryPendingTikTokAffiliateReport=async function(options){
+    options=options||{};
+    const silent=options.silent===true;
     const button=document.getElementById("reportTikTokAffiliateRetry");
     if(button?.dataset.busy==="true")return;
     const en=typeof sellerBooksCurrentLanguage==="function"&&sellerBooksCurrentLanguage()==="en";
@@ -263,7 +265,7 @@ window.sellerBooksRetryPendingTikTokAffiliateReport=async function(){
         });
         const total=Array.from(byStore.values()).reduce((sum,set)=>sum+set.size,0);
         if(!total){
-            if(typeof sellerBooksAlert==="function")sellerBooksAlert(
+            if(!silent&&typeof sellerBooksAlert==="function")sellerBooksAlert(
                 en?"No pending TikTok affiliate Order IDs.":"Tidak ada Order ID affiliate TikTok yang menunggu.",
                 en?"TikTok affiliate":"Affiliate TikTok"
             );
@@ -285,7 +287,7 @@ window.sellerBooksRetryPendingTikTokAffiliateReport=async function(){
         }
         if(typeof sellerBooksRefreshActiveViewAfterSalesImport==="function")
             sellerBooksRefreshActiveViewAfterSalesImport();
-        if(typeof sellerBooksAlert==="function")sellerBooksAlert(
+        if(!silent&&typeof sellerBooksAlert==="function")sellerBooksAlert(
             en
                 ?"TikTok Finance checked "+checked+" Order IDs: "+found+" affiliate fees found, "+zero+" confirmed Rp0, "+failed+" still pending/failed. Only explicit Finance values were saved."
                 :"Finance TikTok memeriksa "+checked+" Order ID: "+found+" biaya affiliate ditemukan, "+zero+" terkonfirmasi Rp0, "+failed+" masih menunggu/gagal. Hanya nilai yang benar-benar dikonfirmasi Finance yang disimpan.",
@@ -294,7 +296,7 @@ window.sellerBooksRetryPendingTikTokAffiliateReport=async function(){
         return {checked,found,zero,failed};
     }catch(error){
         console.error("TikTok affiliate report recheck failed:",error);
-        if(typeof sellerBooksAlert==="function")sellerBooksAlert(
+        if(!silent&&typeof sellerBooksAlert==="function")sellerBooksAlert(
             (en?"TikTok affiliate recheck failed: ":"Pemeriksaan ulang affiliate TikTok gagal: ")+String(error?.message||error),
             en?"TikTok affiliate error":"Kesalahan affiliate TikTok"
         );
