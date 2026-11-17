@@ -1,0 +1,17 @@
+/* Blibli affiliate adapter.
+ * Isolated adapter is registered, but no verified seller-side per-order
+ * affiliate fee endpoint/credential mapping is wired in this SellerBooks repo.
+ * Never convert a missing field/API into Rp0.
+ */
+(function(){
+  const api=window.SellerBooksAffiliate;
+  if(!api)return;
+  api.register("Blibli",{
+    source:"BLIBLI_AFFILIATE",
+    supportsLookup:false,
+    lookup:async function(orderId){
+      return {order_id:orderId,status:"PENDING",found:false,amount:null,
+        source:"BLIBLI_AFFILIATE",error:"BLIBLI_AFFILIATE_SOURCE_NOT_CONFIGURED"};
+    }
+  });
+})();
