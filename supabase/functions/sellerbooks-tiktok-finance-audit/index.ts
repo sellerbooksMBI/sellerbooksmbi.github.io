@@ -216,7 +216,7 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
       sourceUnavailable.length ? "SOURCE_FIELD_UNAVAILABLE" : "INCOMPLETE_COMPONENT_MAPPING",
     warnings: ["Exact requested fields are mapped separately; all discovered fee/tax fields are exposed for review.",
       "SKU rows take precedence over order rows to avoid duplicate aggregation.",
-      "SellerBooks affiliate cost reads affiliate_ads_commission_amount first; the generic affiliate_commission_amount is only a fallback when the ads field is absent, and the two are never added together.",
+      "SellerBooks affiliate cost prefers creator affiliate_commission_amount; affiliate_ads_commission_amount is only a fallback when creator commission is absent. The two are never added together.",
       "Order processing uses transaction_fee_amount, falling back to vn_fix_infrastructure_fee when the primary field is zero or absent; infrastructure is never added twice.",
       "TikTok fee_and_tax_amount excludes logistics in this reconciliation; logistics is shown separately and included in the seven-component total.",
       "Unsettled values are estimates; settled statement values are final."],
@@ -271,10 +271,23 @@ const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" 
   const dynamicField = dynamicPath ? candidates[dynamicPath] : null;
   const exactFound = component?.found === true;
   const dynamicFound = !!dynamicField && Number.isFinite(Number(dynamicField.amount));
+  const componentField = String(component?.selected_field || "");
+  const componentIsAdsOnly = /affiliate_ads_commission_amount/i.test(componentField);
+  const dynamicIsCreatorCommission = /(^|\\.)affiliate_commission_amount$/i.test(dynamicPath);
+  /*
+   * Creator commission is the actual affiliate fee for these Seller Center
+   * orders. The Ads commission field can be explicitly present as zero while
+   * creator commission is non-zero. Prefer the discovered creator field over
+   * an Ads-only zero; use the exact mapped component as fallback otherwise.
+   */
+  const useDynamicCreator = dynamicFound && dynamicIsCreatorCommission &&
+    (!exactFound || componentIsAdsOnly);
   const found = exactFound || dynamicFound;
-  const amount = exactFound ? Math.abs(Number(component.amount)||0) :
+  const amount = useDynamicCreator ? Math.abs(Number(dynamicField.amount)||0) :
+    exactFound ? Math.abs(Number(component.amount)||0) :
     dynamicFound ? Math.abs(Number(dynamicField.amount)||0) : null;
-  const sourceField = exactFound ? String(component.selected_field||"") : dynamicPath;
+  const sourceField = useDynamicCreator ? dynamicPath :
+    exactFound ? componentField : dynamicPath;
   return {
     found,
     amount,
