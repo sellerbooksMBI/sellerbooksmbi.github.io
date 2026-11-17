@@ -13,10 +13,13 @@
     if(raw&&typeof raw==="object"&&String(raw.status||"").toUpperCase()==="CONFIRMED"&&
        raw.amount!==undefined&&raw.amount!==null&&String(raw.amount).trim()!==""&&Number.isFinite(Number(raw.amount))){
       return {order_id:id,found:true,amount:Math.abs(Number(raw.amount)),status:"CONFIRMED",
-        source:String(raw.source||source||""),source_field:String(raw.source_field||""),error:""};
+        source:String(raw.source||source||""),source_field:String(raw.source_field||""),source_mode:String(raw.source_mode||""),
+        diagnostic:raw.diagnostic||{},lookup_diagnostic:raw.lookup_diagnostic||{},error:""};
     }
     return {order_id:id,found:false,amount:null,status:"PENDING",source:source||"",
-      source_field:String(raw?.source_field||""),error:String(raw?.error||"AFFILIATE_DATA_NOT_CONFIRMED")};
+      source_field:String(raw?.source_field||""),source_mode:String(raw?.source_mode||""),
+      diagnostic:raw?.diagnostic||{},lookup_diagnostic:raw?.lookup_diagnostic||{},
+      error:String(raw?.error||"AFFILIATE_DATA_NOT_CONFIRMED")};
   }
   window.SellerBooksAffiliate={
     register:function(name,adapter){
