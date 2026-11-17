@@ -1149,23 +1149,32 @@ function saveSalesImportData(){
     const existingTransactionKeys =
         new Set();
 
-    /* TikTok: duplicate policy is whole Order ID, not Order ID + SKU.
-       Keep this scoped to TikTok so other marketplace import identities
-       and Lazada row-level handling remain unchanged. */
+    /* TikTok and Tokopedia: duplicate policy is the whole Order ID,
+       not Order ID + SKU. Scope by marketplace + store so identical IDs
+       from another marketplace/store never suppress a legitimate order.
+       Keep Lazada's row-level identity and other marketplaces unchanged. */
     const existingTikTokOrderIds = new Set();
+    const existingTokopediaOrderIds = new Set();
 
     imports.forEach(function(existingImport){
         const existingMarketplace=String(existingImport.marketplace||"").trim().toLowerCase();
-        if(
-            existingMarketplace==="tiktok" &&
-            String(existingImport.storeId||"").trim()===String(storeId||"").trim()
-        ){
+        const existingMarketplaceId=String(existingImport.marketplaceId||"").trim().toLowerCase();
+        const sameStore=String(existingImport.storeId||"").trim()===String(storeId||"").trim();
+        if(sameStore&&(existingMarketplace==="tiktok"||existingMarketplaceId==="tiktok")){
             (existingImport.transactions||[]).forEach(function(existingTransaction){
                 const existingOrderId=String(existingTransaction?.orderId||"").trim().toLowerCase();
                 if(existingOrderId)existingTikTokOrderIds.add(existingOrderId);
             });
         }
-
+        if(sameStore&&(existingMarketplace==="tokopedia"||existingMarketplaceId==="tokopedia")){
+            (existingImport.transactions||[]).forEach(function(existingTransaction){
+                const txMarketplace=String(existingTransaction?.marketplace||existingMarketplace).trim().toLowerCase();
+                const txMarketplaceId=String(existingTransaction?.marketplaceId||existingMarketplaceId).trim().toLowerCase();
+                if(txMarketplace!=="tokopedia"&&txMarketplaceId!=="tokopedia")return;
+                const existingOrderId=String(existingTransaction?.orderId||"").trim().toLowerCase();
+                if(existingOrderId)existingTokopediaOrderIds.add(existingOrderId);
+            });
+        }
 
         (existingImport.transactions || [])
             .forEach(function(existingTransaction){
@@ -1196,16 +1205,20 @@ function saveSalesImportData(){
 
     transactions.forEach(function(transaction){
 
-        /* TikTok: if any SKU line for this Order ID was imported before,
-           skip every line of that Order ID in this later import batch.
-           Multiple distinct SKU lines for a genuinely new Order ID are
-           still retained in the current batch. */
+        /* TikTok and Tokopedia: if an Order ID already exists for this
+           same marketplace + store, skip every SKU line for that order.
+           For a new Order ID, keep all distinct SKU lines in this batch. */
         const incomingMarketplace=String(transaction?.marketplace||currentSalesImport.marketplace||"").trim().toLowerCase();
+        const incomingMarketplaceId=String(transaction?.marketplaceId||currentSalesImport.marketplaceId||"").trim().toLowerCase();
         const incomingOrderId=String(transaction?.orderId||"").trim().toLowerCase();
         if(
-            incomingMarketplace==="tiktok" &&
             incomingOrderId &&
-            existingTikTokOrderIds.has(incomingOrderId)
+            (
+                (incomingMarketplace==="tiktok"||incomingMarketplaceId==="tiktok") &&
+                existingTikTokOrderIds.has(incomingOrderId) ||
+                (incomingMarketplace==="tokopedia"||incomingMarketplaceId==="tokopedia") &&
+                existingTokopediaOrderIds.has(incomingOrderId)
+            )
         ){
             return;
         }
