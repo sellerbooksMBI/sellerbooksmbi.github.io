@@ -226,36 +226,63 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
 /* Convert the existing seven-component Finance audit into the affiliate-only
    result consumed by the frontend. This uses the same verified field mapping
    as the original Finance audit and never invents a zero for a missing field. */
+const discoverAffiliateCommission = (rows: any[]) => {
+  const fields: Record<string,{amount:number;occurrences:number;paths:string[]}> = {};
+  const visit = (value:any,path:string,rowIndex:number,depth:number) => {
+    if(!value || typeof value!=="object" || depth>8) return;
+    if(Array.isArray(value)){
+      value.forEach((item,index)=>visit(item,path+"["+index+"]",rowIndex,depth+1));
+      return;
+    }
+    for(const [key,child] of Object.entries(value)){
+      const next=path?path+"."+key:key;
+      if(typeof child==="number" || typeof child==="string"){
+        if(/(affiliate.*commission|commission.*affiliate|creator.*commission|commission.*creator)/i.test(key)){
+          const field=fields[next]||(fields[next]={amount:0,occurrences:0,paths:[]});
+          field.amount+=normalizeAmount(child);
+          field.occurrences++;
+          field.paths.push("["+rowIndex+"]."+next);
+        }
+      }else if(child && typeof child==="object") visit(child,next,rowIndex,depth+1);
+    }
+  };
+  rows.forEach((row,index)=>visit(row,"",index,0));
+  return fields;
+};
 const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETTLED_FINAL") => {
   const audit = buildTikTokFeeAudit(data, sourceMode);
   const component = audit?.components?.affiliate_commission;
-  const rows = Array.isArray(data?.transactions) ? data.transactions : [data];
-  const breakdownRows = rows.filter((row: any) =>
-    row?.fee_tax_breakdown && typeof row.fee_tax_breakdown === "object"
-  );
-  const hasAffiliateField = breakdownRows.some((row: any) => {
-    const visit = (value: any, depth: number): boolean => {
-      if (!value || typeof value !== "object" || depth > 5) return false;
-      return Object.entries(value).some(([key, child]) =>
-        /(affiliate|commission)/i.test(key) ||
-        (child && typeof child === "object" && visit(child, depth + 1))
-      );
-    };
-    return visit(row.fee_tax_breakdown, 0);
+  const skuRows = Array.isArray(data?.sku_transactions) ? data.sku_transactions : [];
+  const orderRows = Array.isArray(data?.transactions) ? data.transactions :
+    (sourceMode === "UNSETTLED_ESTIMATE" && data?.order_id ? [data] : []);
+  const skuCandidates = discoverAffiliateCommission(skuRows);
+  const orderCandidates = discoverAffiliateCommission(orderRows);
+  const candidates = Object.keys(skuCandidates).length ? skuCandidates : orderCandidates;
+  const candidatePaths = Object.keys(candidates);
+  const priority = candidatePaths.sort((a,b) => {
+    const rank=(path:string) => /affiliate_ads_commission_amount/i.test(path)?0:
+      /affiliate_commission_amount/i.test(path)?1:
+      /creator.*commission/i.test(path)?2:3;
+    return rank(a)-rank(b);
   });
-  /* An exact Finance transaction with a returned fee breakdown but no
-     affiliate/commission field is a confirmed zero, not an endless pending. */
-  const confirmedZero = component?.found !== true && breakdownRows.length > 0 && !hasAffiliateField;
+  const dynamicPath = priority[0] || "";
+  const dynamicField = dynamicPath ? candidates[dynamicPath] : null;
+  const exactFound = component?.found === true;
+  const dynamicFound = !!dynamicField && Number.isFinite(Number(dynamicField.amount));
+  const found = exactFound || dynamicFound;
+  const amount = exactFound ? Math.abs(Number(component.amount)||0) :
+    dynamicFound ? Math.abs(Number(dynamicField.amount)||0) : null;
+  const sourceField = exactFound ? String(component.selected_field||"") : dynamicPath;
   return {
-    found: component?.found === true || confirmedZero,
-    amount: component?.found === true ? Math.abs(Number(component.amount) || 0) : confirmedZero ? 0 : null,
-    source_field: String(component?.selected_field || (confirmedZero ? "fee_tax_breakdown (affiliate commission field absent; confirmed Rp0)" : "")),
+    found,
+    amount,
+    source_field: sourceField,
     diagnostic: {
-      occurrences: Number(component?.occurrences || 0),
-      paths: Array.isArray(component?.paths) ? component.paths : [],
+      occurrences: Number(component?.occurrences || dynamicField?.occurrences || 0),
+      paths: Array.isArray(component?.paths) && component.paths.length ? component.paths : (dynamicField?.paths||[]),
       readiness: String(audit?.readiness || "UNKNOWN"),
       missing_components: audit?.admin_marketplace_total?.missing_components || [],
-      confirmed_zero_no_affiliate_field: confirmedZero,
+      discovered_affiliate_candidates: Object.keys(candidates).map(path=>({path,amount:candidates[path].amount,occurrences:candidates[path].occurrences})),
     },
   };
 };
