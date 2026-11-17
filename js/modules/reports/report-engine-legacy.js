@@ -3489,6 +3489,25 @@ function renderReportAffiliateTable(){
         out+='<button type="button" class="report-transaction-page-button" onclick="goToReportAffiliatePage('+(reportAffiliatePage+1)+')" '+(reportAffiliatePage>=totalPages?'disabled':'')+' aria-label="'+nextLabel+'">'+nextLabel+' ›</button>';
         controls.innerHTML=out;
     }
+
+    /* Automatically recheck pending TikTok affiliate rows when the report
+       is opened/refreshed. Cooldown prevents repeated API traffic during
+       pagination and normal report rerenders. Manual retry remains available. */
+    const hasPendingTikTok=rows.some(function(item){
+        return /tiktok/i.test(String(item.marketplace||"")) &&
+            String(item.status||"").toUpperCase()!=="CONFIRMED";
+    });
+    const cloudReady=typeof sellerBooksCloudReady!=="undefined"&&sellerBooksCloudReady&&
+        !sellerBooksCloudLoading&&typeof sellerBooksAuthUser!=="undefined"&&!!sellerBooksAuthUser;
+    const lastAutoRetry=Number(window.__sellerBooksTikTokAffiliateAutoRetryAt||0);
+    if(hasPendingTikTok&&cloudReady&&
+       typeof window.sellerBooksRetryPendingTikTokAffiliateReport==="function"&&
+       Date.now()-lastAutoRetry>10*60*1000){
+        window.__sellerBooksTikTokAffiliateAutoRetryAt=Date.now();
+        window.setTimeout(function(){
+            window.sellerBooksRetryPendingTikTokAffiliateReport({silent:true});
+        },1200);
+    }
 }
 /* =========================================================
    DETAIL TRANSAKSI - STATE PAGINATION
