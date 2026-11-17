@@ -547,6 +547,20 @@ Deno.serve(async (req: Request) => {
     const confirmed = selectedAffiliate?.found === true &&
       Number.isFinite(Number(selectedAffiliate.amount));
 
+    console.log(JSON.stringify({
+      service:"sellerbooks-tiktok-finance-audit",
+      event:"affiliate_audit_result",
+      order_id_suffix:orderId.slice(-6),
+      confirmed,
+      amount:confirmed?Math.abs(Number(selectedAffiliate.amount)||0):null,
+      source_mode:selectedSource||"FINANCE_PENDING",
+      source_field:selectedAffiliate?.source_field||"",
+      candidates:selectedAffiliate?.diagnostic?.discovered_affiliate_candidates||[],
+      settled_error:settledError,
+      statement_error:statementError,
+      unsettled_error:unsettledError,
+    }));
+
     return response({
       ok: true,
       mode: "TIKTOK_FINANCE_AFFILIATE",
