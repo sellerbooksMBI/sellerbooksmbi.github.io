@@ -708,6 +708,21 @@ async function saveProduct(){
 
 
 
+    /* Status tombol simpan: samakan dengan Konfirmasi Data pada Import Penjualan. */
+    const saveButton=document.querySelector('#productModal .modal-footer .primary-button[onclick="saveProduct()"]');
+    if(saveButton && saveButton.dataset.saving==="true")return;
+    const originalSaveButtonText=saveButton ? saveButton.textContent : "";
+    const originalSaveButtonBackground=saveButton ? saveButton.style.backgroundColor : "";
+    const originalSaveButtonBorder=saveButton ? saveButton.style.borderColor : "";
+    if(saveButton){
+        saveButton.dataset.saving="true";
+        saveButton.disabled=true;
+        saveButton.textContent=sellerBooksCurrentLanguage()==="en" ? "Saving… Please wait" : "Sedang menyimpan…";
+        saveButton.style.backgroundColor="#94a3b8";
+        saveButton.style.borderColor="#94a3b8";
+        saveButton.setAttribute("aria-busy","true");
+    }
+
     /* EDIT PRODUK */
 
     if(editingProductId){
@@ -860,9 +875,8 @@ async function saveProduct(){
        di Supabase sebelum menyatakan proses selesai. Jangan fire-and-forget:
        jika cloud belum mengonfirmasi, perubahan bisa kembali saat refresh.
     */
-    saveProductData({deferCloudPersist:true});
-
     try{
+        saveProductData({deferCloudPersist:true});
         if(typeof sellerBooksCloudSaveTimer!=="undefined" && sellerBooksCloudSaveTimer){
             clearTimeout(sellerBooksCloudSaveTimer);
             sellerBooksCloudSaveTimer=null;
@@ -917,6 +931,15 @@ async function saveProduct(){
         console.error("Verifikasi penyimpanan Master Produk gagal:",error);
         sellerBooksAlert("Perubahan belum terkonfirmasi tersimpan di cloud. Periksa koneksi lalu coba Simpan kembali. Detail: "+String(error?.message||error));
         return;
+    }finally{
+        if(saveButton){
+            saveButton.dataset.saving="false";
+            saveButton.disabled=false;
+            saveButton.textContent=originalSaveButtonText;
+            saveButton.style.backgroundColor=originalSaveButtonBackground;
+            saveButton.style.borderColor=originalSaveButtonBorder;
+            saveButton.removeAttribute("aria-busy");
+        }
     }
 
     closeProductModal();
