@@ -709,17 +709,20 @@ async function saveProduct(){
 
 
     /* Status tombol simpan: samakan dengan Konfirmasi Data pada Import Penjualan. */
-    const saveButton=document.querySelector('#productModal .modal-footer .primary-button[onclick="saveProduct()"]');
+    const productModal=document.getElementById("productModal");
+    const saveButton=productModal ? productModal.querySelector('button[onclick="saveProduct()"]') : document.querySelector('button[onclick="saveProduct()"]');
     if(saveButton && saveButton.dataset.saving==="true")return;
     const originalSaveButtonText=saveButton ? saveButton.textContent : "";
-    const originalSaveButtonBackground=saveButton ? saveButton.style.backgroundColor : "";
-    const originalSaveButtonBorder=saveButton ? saveButton.style.borderColor : "";
+    const originalSaveButtonBackground=saveButton ? saveButton.style.getPropertyValue("background-color") : "";
+    const originalSaveButtonBorder=saveButton ? saveButton.style.getPropertyValue("border-color") : "";
     if(saveButton){
         saveButton.dataset.saving="true";
         saveButton.disabled=true;
         saveButton.textContent=sellerBooksCurrentLanguage()==="en" ? "Saving… Please wait" : "Sedang menyimpan…";
-        saveButton.style.backgroundColor="#94a3b8";
-        saveButton.style.borderColor="#94a3b8";
+        saveButton.style.setProperty("background-color","#94a3b8","important");
+        saveButton.style.setProperty("background","#94a3b8","important");
+        saveButton.style.setProperty("border-color","#94a3b8","important");
+        saveButton.style.setProperty("opacity","1","important");
         saveButton.setAttribute("aria-busy","true");
     }
 
@@ -936,8 +939,16 @@ async function saveProduct(){
             saveButton.dataset.saving="false";
             saveButton.disabled=false;
             saveButton.textContent=originalSaveButtonText;
-            saveButton.style.backgroundColor=originalSaveButtonBackground;
-            saveButton.style.borderColor=originalSaveButtonBorder;
+            if(originalSaveButtonBackground){
+                saveButton.style.setProperty("background-color",originalSaveButtonBackground);
+                saveButton.style.setProperty("background",originalSaveButtonBackground);
+            }else{
+                saveButton.style.removeProperty("background-color");
+                saveButton.style.removeProperty("background");
+            }
+            if(originalSaveButtonBorder)saveButton.style.setProperty("border-color",originalSaveButtonBorder);
+            else saveButton.style.removeProperty("border-color");
+            saveButton.style.removeProperty("opacity");
             saveButton.removeAttribute("aria-busy");
         }
     }
