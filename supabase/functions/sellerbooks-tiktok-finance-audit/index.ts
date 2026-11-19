@@ -134,10 +134,8 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
   };
   const affiliateAds = feeRowsFor("fee_tax_breakdown.fee.affiliate_ads_commission_amount");
   const affiliatePrimary = feeRowsFor("fee_tax_breakdown.fee.affiliate_commission_amount");
-  // Creator affiliate fee is reported in affiliate_commission_amount.
-  // affiliate_ads_commission_amount is a separate Ads commission component and may be
-  // zero while creator affiliate is charged. Prefer creator commission when present;
-  // use Ads commission only as a fallback when the creator field is absent.
+  // Prefer a non-zero creator affiliate commission. If it is zero or absent,
+  // use a non-zero affiliate Ads commission as fallback. Never add both fields.
   // A present creator field with value 0 must not mask a non-zero affiliate Ads
   // commission. Prefer non-zero creator commission; otherwise use non-zero Ads.
   // Never add both components together because they may represent overlapping fees.
@@ -221,7 +219,7 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
       sourceUnavailable.length ? "SOURCE_FIELD_UNAVAILABLE" : "INCOMPLETE_COMPONENT_MAPPING",
     warnings: ["Exact requested fields are mapped separately; all discovered fee/tax fields are exposed for review.",
       "SKU rows take precedence over order rows to avoid duplicate aggregation.",
-      "SellerBooks affiliate cost prefers creator affiliate_commission_amount; affiliate_ads_commission_amount is only a fallback when creator commission is absent. The two are never added together.",
+      "SellerBooks affiliate cost prefers non-zero creator affiliate_commission_amount; if zero or absent, it falls back to affiliate_ads_commission_amount. The two are never added together.",
       "Order processing uses transaction_fee_amount, falling back to vn_fix_infrastructure_fee when the primary field is zero or absent; infrastructure is never added twice.",
       "TikTok fee_and_tax_amount excludes logistics in this reconciliation; logistics is shown separately and included in the seven-component total.",
       "Unsettled values are estimates; settled statement values are final."],
@@ -280,10 +278,9 @@ const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" 
   const componentIsAdsOnly = /affiliate_ads_commission_amount/i.test(componentField);
   const dynamicIsCreatorCommission = dynamicPath==="affiliate_commission_amount" || dynamicPath.endsWith(".affiliate_commission_amount");
   /*
-   * Creator commission is the actual affiliate fee for these Seller Center
-   * orders. The Ads commission field can be explicitly present as zero while
-   * creator commission is non-zero. Prefer the discovered creator field over
-   * an Ads-only zero; use the exact mapped component as fallback otherwise.
+   * Prefer a non-zero creator commission. If the creator field exists but is
+   * zero while the Ads affiliate commission is non-zero, use the Ads component.
+   * Never add the two components together.
    */
   const useDynamicCreator = dynamicFound && dynamicIsCreatorCommission &&
     Number(dynamicField.amount) !== 0 &&
