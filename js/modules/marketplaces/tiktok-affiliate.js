@@ -266,8 +266,8 @@ window.sellerBooksRetryPendingTikTokAffiliateReport=async function(options){
         const total=Array.from(byStore.values()).reduce((sum,set)=>sum+set.size,0);
         if(!total){
             if(!silent&&typeof sellerBooksAlert==="function")sellerBooksAlert(
-                en?"No pending TikTok affiliate Order IDs.":"Tidak ada Order ID affiliate TikTok yang menunggu.",
-                en?"TikTok affiliate":"Affiliate TikTok"
+                en?"No affiliate Order IDs are pending.":"Tidak ada Order ID affiliate yang menunggu.",
+                en?"Affiliate Fees":"Biaya Affiliate"
             );
             return {checked:0,found:0,zero:0,failed:0};
         }
