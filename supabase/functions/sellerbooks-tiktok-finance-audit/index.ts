@@ -138,7 +138,12 @@ const buildTikTokFeeAudit = (data: any, sourceMode: "UNSETTLED_ESTIMATE" | "SETT
   // affiliate_ads_commission_amount is a separate Ads commission component and may be
   // zero while creator affiliate is charged. Prefer creator commission when present;
   // use Ads commission only as a fallback when the creator field is absent.
-  const affiliate = affiliatePrimary.found
+  // A present creator field with value 0 must not mask a non-zero affiliate Ads
+  // commission. Prefer non-zero creator commission; otherwise use non-zero Ads.
+  // Never add both components together because they may represent overlapping fees.
+  const useCreatorAffiliate = affiliatePrimary.found &&
+    (affiliatePrimary.amount !== 0 || !affiliateAds.found || affiliateAds.amount === 0);
+  const affiliate = useCreatorAffiliate
     ? { ...affiliatePrimary, selected_field: "fee_tax_breakdown.fee.affiliate_commission_amount" }
     : { ...affiliateAds, selected_field: "fee_tax_breakdown.fee.affiliate_ads_commission_amount" };
   const processingStandard = feeRowsFor("fee_tax_breakdown.fee.transaction_fee_amount");
@@ -281,6 +286,7 @@ const extractAffiliateCommission = (data: any, sourceMode: "UNSETTLED_ESTIMATE" 
    * an Ads-only zero; use the exact mapped component as fallback otherwise.
    */
   const useDynamicCreator = dynamicFound && dynamicIsCreatorCommission &&
+    Number(dynamicField.amount) !== 0 &&
     (!exactFound || componentIsAdsOnly);
   const found = exactFound || dynamicFound;
   const amount = useDynamicCreator ? Math.abs(Number(dynamicField.amount)||0) :
