@@ -2603,12 +2603,14 @@ function getReportAffiliateRows(transactions){
                 storeName:String(item.storeName||"-"),
                 marketplace:String(item.marketplace||"-"),
                 date:item.transactionDate||item.orderCreateTime||item.importedAt||item.reportDate||"",
+                affiliateName:String(item.creatorHandle||item.affiliateName||item.creatorUsername||"").trim(),
                 amount:amount,status:status
             });
         }else{
             if(amount>existing.amount) existing.amount=amount;
             if(status==="CONFIRMED") existing.status=status;
             if(!existing.date) existing.date=item.transactionDate||item.orderCreateTime||item.importedAt||item.reportDate||"";
+            if(!existing.affiliateName) existing.affiliateName=String(item.creatorHandle||item.affiliateName||item.creatorUsername||"").trim();
         }
     });
     return Array.from(unique.values()).sort(function(a,b){
@@ -3448,7 +3450,7 @@ function renderReportAffiliateTable(){
         reportAffiliatePage=1;
     }
     if(!rows.length){
-        body.innerHTML='<tr><td colspan="6" style="text-align:center;padding:30px;color:#64748b;">Belum ada data affiliate pada periode ini.</td></tr>';
+        body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;color:#64748b;">Belum ada data affiliate pada periode ini.</td></tr>';
         if(pagination) pagination.style.display="none";
         return;
     }
@@ -3471,7 +3473,7 @@ function renderReportAffiliateTable(){
         const confirmed=item.status==="CONFIRMED";
         const statusText=confirmed?"Valid":"Menunggu data";
         const amountText=confirmed?formatRupiah(item.amount):"-";
-        return '<tr><td>'+escapeHtml(dateText)+'</td><td>'+escapeHtml(item.storeName)+'</td><td style="font-family:monospace;">'+escapeHtml(item.orderId)+'</td><td>'+amountText+'</td><td>'+escapeHtml(statusText)+'</td><td>'+escapeHtml(item.marketplace)+'</td></tr>';
+        return '<tr><td>'+escapeHtml(dateText)+'</td><td>'+escapeHtml(item.storeName)+'</td><td style="font-family:monospace;">'+escapeHtml(item.orderId)+'</td><td>'+escapeHtml(item.affiliateName||'-')+'</td><td>'+amountText+'</td><td>'+escapeHtml(statusText)+'</td><td>'+escapeHtml(item.marketplace)+'</td></tr>';
     }).join("");
     if(pagination) pagination.style.display="flex";
     if(controls){
