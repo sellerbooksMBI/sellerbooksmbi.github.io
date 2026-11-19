@@ -141,8 +141,8 @@ async function syncTikTokOrdersNowInternal(storeId){
             const ids=pending.map(function(item){return String(item?.order_id||"").trim();}).filter(Boolean);
             sellerBooksAlert(
                 sellerBooksPullOrderIsEN()
-                    ? "TikTok found "+Number(result.orders_found||count)+" order(s), but Finance Subtotal is not available yet for "+count+" Order ID(s). No fallback price was used and these orders were not imported. Please pull orders again after TikTok publishes Finance data."+(ids.length?"\\n\\nPending Order IDs: "+ids.join(", "):"")
-                    : "TikTok menemukan "+Number(result.orders_found||count)+" order, tetapi Finance Subtotal belum tersedia untuk "+count+" Order ID. Tidak ada harga pengganti yang digunakan dan order tertunda belum diimpor. Silakan Tarik Order kembali setelah data Finance tersedia."+(ids.length?"\\n\\nOrder ID tertunda: "+ids.join(", "):""),
+                    ? "TikTok found "+Number(result.orders_found||count)+" order(s), but Finance Subtotal is not available yet for "+count+" Order ID(s). No fallback price was used and these orders were not imported. Please pull orders again after TikTok publishes Finance data."+(ids.length?"\n\nPending Order IDs: "+ids.join(", "):"")
+                    : "TikTok menemukan "+Number(result.orders_found||count)+" order, tetapi Finance Subtotal belum tersedia untuk "+count+" Order ID. Tidak ada harga pengganti yang digunakan dan order tertunda belum diimpor. Silakan Tarik Order kembali setelah data Finance tersedia."+(ids.length?"\n\nOrder ID tertunda: "+ids.join(", "):""),
                 sellerBooksPullOrderText("resultTitle","TikTok")
             );
             return;
@@ -281,8 +281,8 @@ async function syncTikTokOrdersNowInternal(storeId){
                 const ids=financePending.map(function(item){return String(item?.order_id||"").trim();}).filter(Boolean);
                 sellerBooksAlert(
                     sellerBooksPullOrderIsEN()
-                        ? "Available TikTok orders were imported. "+financePending.length+" Order ID(s) are waiting for Finance Subtotal and were not imported yet. Pull orders again after Finance is published."+(ids.length?"\\n\\nPending Order IDs: "+ids.join(", "):"")
-                        : "Order TikTok yang Finance-nya sudah tersedia berhasil diproses. "+financePending.length+" Order ID masih menunggu Finance Subtotal dan belum diimpor. Silakan Tarik Order kembali setelah Finance tersedia."+(ids.length?"\\n\\nOrder ID tertunda: "+ids.join(", "):""),
+                        ? "Available TikTok orders were imported. "+financePending.length+" Order ID(s) are waiting for Finance Subtotal and were not imported yet. Pull orders again after Finance is published."+(ids.length?"\n\nPending Order IDs: "+ids.join(", "):"")
+                        : "Order TikTok yang Finance-nya sudah tersedia berhasil diproses. "+financePending.length+" Order ID masih menunggu Finance Subtotal dan belum diimpor. Silakan Tarik Order kembali setelah Finance tersedia."+(ids.length?"\n\nOrder ID tertunda: "+ids.join(", "):""),
                     sellerBooksPullOrderText("resultTitle","TikTok")
                 );
             }
