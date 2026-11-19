@@ -1026,6 +1026,12 @@ function saveSalesImportData(){
                 orderId:
                     transactionOrderId,
 
+                /* Username kreator TikTok hanya metadata laporan; tidak masuk rumus komisi. */
+                creatorHandle:
+                    currentSalesImport.marketplace === "TikTok"
+                        ? String(getFirstValue(row,currentSalesImport.headers,["creator handle","creator_handle","creator username"]) || "").trim()
+                        : "",
+
                 affiliateCommissionAmount:
                     affiliateCommissionAmount,
 
