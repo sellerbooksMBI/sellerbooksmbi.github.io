@@ -242,7 +242,7 @@ window.sellerBooksRetryPendingTikTokAffiliateReport=async function(options){
     const button=document.getElementById("reportTikTokAffiliateRetry");
     if(button?.dataset.busy==="true")return;
     const en=typeof sellerBooksCurrentLanguage==="function"&&sellerBooksCurrentLanguage()==="en";
-    const original=en?"Recheck TikTok affiliate":"Periksa ulang affiliate TikTok";
+    const original="Refresh";
     const setLabel=function(value){if(button)button.textContent=value;};
     try{
         if(!sellerBooksCloudReady||sellerBooksCloudLoading||!sellerBooksAuthUser)
