@@ -1013,10 +1013,46 @@ async function deleteReportsByDateRange(){
             sellerBooksCloudSaveTimer = null;
         }
         const expectedSnapshot=sellerBooksCloneCloudState(sellerBooksCloudState);
-        await sellerBooksPersistCloudDataStrict(expectedSnapshot);
-        if(sellerBooksCloudDirtyKeys && sellerBooksCloudDirtyKeys.size){
-            throw new Error("cloud_save_unconfirmed");
-        }
+        const expectedProductsSnapshot=expectedSnapshot["sellerbooks_products"];
+
+        /* Verifikasi hanya data yang menjadi bagian operasi ini.
+           Dirty key lain bisa berasal dari perubahan terpisah dan tidak
+           boleh membuat penghapusan laporan yang sudah tersimpan dianggap gagal. */
+        const deletedImportSignatures=new Set(
+            deletedImports.map(function(record){
+                const id=String(record && record.id || "").trim();
+                return id ? "id:"+id : "record:"+JSON.stringify(record);
+            })
+        );
+
+        await sellerBooksPersistCloudDataStrict(expectedSnapshot,function(savedData){
+            let savedImports=[];
+            try{
+                const raw=savedData && savedData["sellerbooks_sales_imports"];
+                savedImports=Array.isArray(raw) ? raw : JSON.parse(raw || "[]");
+                if(!Array.isArray(savedImports))return false;
+            }catch(readError){
+                return false;
+            }
+
+            const savedSignatures=new Set(
+                savedImports.map(function(record){
+                    const id=String(record && record.id || "").trim();
+                    return id ? "id:"+id : "record:"+JSON.stringify(record);
+                })
+            );
+
+            const reportsDeleted=Array.from(deletedImportSignatures).every(function(signature){
+                return !savedSignatures.has(signature);
+            });
+
+            /* Stock restoration is part of the same cloud snapshot. */
+            const stockSaved=
+                savedData &&
+                savedData["sellerbooks_products"]===expectedProductsSnapshot;
+
+            return reportsDeleted && stockSaved;
+        });
         cloudConfirmed=true;    }catch(error){
         console.error("Penghapusan laporan periode belum terkonfirmasi di cloud:",error);
         sellerBooksAlert(sellerBooksCurrentLanguage()==="en"
