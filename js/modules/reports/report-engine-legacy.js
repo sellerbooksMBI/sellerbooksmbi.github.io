@@ -1053,7 +1053,8 @@ async function deleteReportsByDateRange(){
 
             return reportsDeleted && stockSaved;
         });
-        cloudConfirmed=true;    }catch(error){
+        cloudConfirmed=true;
+    }catch(error){
         console.error("Penghapusan laporan periode belum terkonfirmasi di cloud:",error);
         sellerBooksAlert(sellerBooksCurrentLanguage()==="en"
             ? "The report deletion could not be confirmed in the cloud. Please check the data before repeating the deletion."
