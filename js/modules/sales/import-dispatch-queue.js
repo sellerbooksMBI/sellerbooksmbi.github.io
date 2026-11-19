@@ -99,6 +99,40 @@ async function sellerBooksDispatchExcelToImportPenjualan(queueItem,showResult,af
     }
 
     const record=saveSalesImportData();
+
+    /* Refresh creator-name metadata for already-imported TikTok Order IDs too.
+       This is deliberately separate from duplicate detection and all financial fields. */
+    const isTikTokQueue=/tiktok/i.test(marketplaceName);
+    if(isTikTokQueue){
+        const orderIdIndex=headers.indexOf("Order ID");
+        const creatorIndex=headers.indexOf("Creator Handle");
+        const handlesByOrder=new Map();
+        rows.forEach(function(row){
+            const orderId=String(row?.[orderIdIndex]||"").trim();
+            const handle=String(row?.[creatorIndex]||"").trim();
+            if(!orderId||!handle)return;
+            if(!handlesByOrder.has(orderId))handlesByOrder.set(orderId,new Set());
+            handlesByOrder.get(orderId).add(handle);
+        });
+        if(handlesByOrder.size){
+            let savedImports=[];
+            try{savedImports=JSON.parse(sellerBooksStorage.getItem("sellerbooks_sales_imports")||"[]")||[];}catch(error){savedImports=[];}
+            savedImports.forEach(function(savedRecord){
+                if(String(savedRecord.storeId||"")!==String(queueItem.store_id)||!/tiktok/i.test(String(savedRecord.marketplace||"")))return;
+                (savedRecord.transactions||[]).forEach(function(tx){
+                    const handleSet=handlesByOrder.get(String(tx.orderId||"").trim());
+                    if(handleSet&&handleSet.size)tx.creatorHandle=Array.from(handleSet).join(", ");
+                });
+            });
+            const serialized=JSON.stringify(savedImports);
+            sellerBooksStorage.setItem("sellerbooks_sales_imports",serialized);
+            if(sellerBooksCloudState&&typeof sellerBooksCloudState==="object"){
+                sellerBooksCloudState["sellerbooks_sales_imports"]=serialized;
+            }
+            if(typeof sellerBooksInvalidateSalesReportCaches==="function")sellerBooksInvalidateSalesReportCaches();
+        }
+    }
+
     if(record){
         if(typeof sellerBooksCloudSaveTimer!=="undefined" && sellerBooksCloudSaveTimer){
             clearTimeout(sellerBooksCloudSaveTimer);
