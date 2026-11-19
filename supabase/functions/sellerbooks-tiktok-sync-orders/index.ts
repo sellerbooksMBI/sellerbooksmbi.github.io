@@ -366,6 +366,65 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
     if(nextUpdate>=prevUpdate) foundById.set(id,order);
   }
   const found=[...foundById.values()];
+
+  /*
+   * Creator usernames come from TikTok Seller Affiliate Orders, not Finance.
+   * This lookup is metadata-only: it never supplies or changes commission amounts.
+   * The API permission is optional; if TikTok has not approved the scope yet,
+   * order sync continues normally and the report keeps the name blank.
+   */
+  const creatorHandleByOrderSku=new Map<string,string>();
+  const creatorHandleByOrder=new Map<string,string>();
+  let creatorLookupStatus="NOT_AVAILABLE";
+  try{
+    const timestamps=found.map((order:any)=>{
+      const raw=Number(order?.create_time??order?.created_time??order?.order_create_time??0);
+      return Math.floor(raw>1000000000000?raw/1000:raw);
+    }).filter((value:number)=>Number.isFinite(value)&&value>0);
+    if(timestamps.length){
+      const rangeStart=Math.min(...timestamps);
+      const rangeEnd=Math.max(...timestamps)+1;
+      const maxWindow=90*86400;
+      for(let windowStart=rangeStart;windowStart<rangeEnd;windowStart+=maxWindow){
+        const windowEnd=Math.min(rangeEnd,windowStart+maxWindow);
+        let pageToken="";
+        const seenCreatorPageTokens=new Set<string>();
+        while(true){
+          const response=await api(z,"/affiliate_seller/202410/orders/search",{
+            create_time_ge:windowStart,
+            create_time_lt:windowEnd,
+            __query:{page_size:100,...(pageToken?{page_token:pageToken}:{})}
+          });
+          const data=response?.data??{};
+          const affiliateOrders=Array.isArray(data?.orders)?data.orders:[];
+          for(const affiliateOrder of affiliateOrders){
+            const affiliateOrderId=String(affiliateOrder?.id||"").trim();
+            if(!affiliateOrderId)continue;
+            const skus=Array.isArray(affiliateOrder?.skus)?affiliateOrder.skus:[];
+            const orderHandles=new Set<string>();
+            for(const affiliateSku of skus){
+              const handle=String(affiliateSku?.creator_username||"").trim();
+              if(!handle)continue;
+              orderHandles.add(handle);
+              const skuId=String(affiliateSku?.sku_id||"").trim();
+              if(skuId)creatorHandleByOrderSku.set(affiliateOrderId+"::"+skuId,handle);
+            }
+            if(orderHandles.size)creatorHandleByOrder.set(affiliateOrderId,[...orderHandles].join(", "));
+          }
+          const nextToken=String(data?.next_page_token||"");
+          if(!nextToken)break;
+          if(seenCreatorPageTokens.has(nextToken))throw Error("TIKTOK_AFFILIATE_CREATOR_PAGE_TOKEN_REPEATED");
+          seenCreatorPageTokens.add(nextToken);
+          pageToken=nextToken;
+        }
+      }
+      creatorLookupStatus="COMPLETED";
+    }
+  }catch(error){
+    creatorLookupStatus="UNAVAILABLE";
+    console.warn("TikTok creator username lookup unavailable; financial order sync continues:",String(error instanceof Error?error.message:error));
+  }
+
   const rows:any[]=[];
   const affiliateByOrderId:Record<string,any>={};
   const financePendingOrders:Array<{order_id:string;reason:string;order_create_time:number}> = [];
@@ -475,9 +534,14 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
       }
       if(items.length){
         for(let index=0;index<items.length;index++){
-          rows.push(makeTikTokExcelRow({...order,...detailOrder},items[index],financeAmounts[index]));
+          const creatorKey=id+"::"+skuId(items[index]);
+          const creatorHandle=creatorHandleByOrderSku.get(creatorKey)||creatorHandleByOrder.get(id)||"";
+          rows.push(makeTikTokExcelRow({...order,...detailOrder},{...items[index],creator_handle:creatorHandle},financeAmounts[index]));
         }
-      }else rows.push(makeTikTokExcelRow({...order,...detailOrder},detailOrder,financeAmounts[0]));
+      }else{
+        const creatorHandle=creatorHandleByOrder.get(id)||"";
+        rows.push(makeTikTokExcelRow({...order,...detailOrder},{...detailOrder,creator_handle:creatorHandle},financeAmounts[0]));
+      }
     }
   }
   if(!rows.length){
@@ -524,6 +588,7 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
     orders_found:found.length,rows_found:rows.length,
     queue_id:queued.queue_id,file_name:queued.file_name,
     finance_orders:financeOrders,affiliate_by_order_id:affiliateByOrderId,
+    creator_lookup_status:creatorLookupStatus,creator_names_found:creatorHandleByOrder.size,
     finance_pending_orders:financePendingOrders,
     finance_pending_count:financePendingOrders.length,
     engine:"SELLERBOOKS_IMPORT_PENJUALAN"
