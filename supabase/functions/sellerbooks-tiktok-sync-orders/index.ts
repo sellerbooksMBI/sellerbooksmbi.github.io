@@ -431,38 +431,76 @@ async function run(c:any,from:number,to:number,token:string,pk:string,sk:string)
   const unsettledFinanceByOrder=new Map<string,any>();
   let unsettledFinancePageToken="";
   let unsettledFinanceComplete=false;
-  let unsettledFinancePages=0;
+  const seenUnsettledFinancePageTokens=new Set<string>();
   async function findUnsettledFinanceOrder(targetOrderId:string,orderCreatedAt:number){
     const searchStart=Math.max(1735689600,(orderCreatedAt||Math.floor(Date.now()/1000))-90*86400);
-    while(!unsettledFinanceComplete&&unsettledFinancePages<30){
+    while(!unsettledFinanceComplete){
       const query:Record<string,string>={page_size:"100",sort_field:"order_create_time",sort_order:"DESC",search_time_ge:String(searchStart),search_time_lt:String(Math.floor(Date.now()/1000)+1)};
       if(unsettledFinancePageToken) query.page_token=unsettledFinancePageToken;
       const page=await financeGet(z,"/finance/202507/orders/unsettled",query);
-      unsettledFinancePages++;
       const txRows=Array.isArray(page?.transactions)?page.transactions:[];
       for(const transaction of txRows){const key=String(transaction?.order_id||"").trim();if(key) unsettledFinanceByOrder.set(key,transaction);}
-      unsettledFinancePageToken=String(page?.next_page_token||"");
-      if(!unsettledFinancePageToken) unsettledFinanceComplete=true;
+      const nextToken=String(page?.next_page_token||"");
+      if(!nextToken){unsettledFinanceComplete=true;unsettledFinancePageToken="";break;}
+      if(seenUnsettledFinancePageTokens.has(nextToken)) throw Error("TIKTOK_UNSETTLED_FINANCE_PAGE_TOKEN_REPEATED");
+      seenUnsettledFinancePageTokens.add(nextToken);
+      unsettledFinancePageToken=nextToken;
       if(unsettledFinanceByOrder.has(targetOrderId)) break;
     }
     return unsettledFinanceByOrder.get(targetOrderId)||null;
   }
   async function findStatementFinanceOrder(targetOrderId:string, orderCreatedAt:number, items:any[]){
-    const start=Math.max(1735689600,(orderCreatedAt||Math.floor(Date.now()/1000))-90*86400);let listToken="";
-    for(let pageNo=0;pageNo<10;pageNo++){
-      const query:Record<string,string>={statement_time_ge:String(start),statement_time_lt:String(Math.floor(Date.now()/1000)+1),sort_field:"statement_time",sort_order:"ASC",page_size:"100"};if(listToken)query.page_token=listToken;
+    const start=Math.max(1735689600,(orderCreatedAt||Math.floor(Date.now()/1000))-90*86400);
+    let listToken="";
+    const seenStatementPageTokens=new Set<string>();
+    while(true){
+      const query:Record<string,string>={statement_time_ge:String(start),statement_time_lt:String(Math.floor(Date.now()/1000)+1),sort_field:"statement_time",sort_order:"ASC",page_size:"100"};
+      if(listToken)query.page_token=listToken;
       const list=await financeGet(z,"/finance/202309/statements",query),data=list?.data||{},statements=Array.isArray(data?.statements)?data.statements:[];
-      for(const statement of statements){const statementId=String(statement?.id||"").trim();if(!statementId)continue;let detailToken="";
-        for(let detailPage=0;detailPage<10;detailPage++){const dq:Record<string,string>={sort_field:"order_create_time",sort_order:"ASC",page_size:"100"};if(detailToken)dq.page_token=detailToken;
+      for(const statement of statements){
+        const statementId=String(statement?.id||"").trim();if(!statementId)continue;
+        let detailToken="";
+        const seenStatementDetailTokens=new Set<string>();
+        while(true){
+          const dq:Record<string,string>={sort_field:"order_create_time",sort_order:"ASC",page_size:"100"};
+          if(detailToken)dq.page_token=detailToken;
           const page=await financeGet(z,"/finance/202501/statements/"+encodeURIComponent(statementId)+"/statement_transactions",dq),dd=page?.data||{},tx=Array.isArray(dd?.transactions)?dd.transactions:[];
           const matches=tx.filter((row:any)=>String(row?.order_id||row?.adjustment_order_id||"").trim()===targetOrderId);
-          if(matches.length){const skuRows=matches.flatMap((row:any)=>Array.isArray(row?.sku_transactions)?row.sku_transactions:[]);
-            if(skuRows.length){const bySku=new Map<string,number>();for(const row of skuRows){const sid=String(row?.sku_id||"").trim(),amount=financeSellerSubtotal(row);if(sid&&amount!==null)bySku.set(sid,(bySku.get(sid)||0)+amount);}const mapped=items.map(item=>bySku.get(skuId(item))??null);if(mapped.every(v=>v!==null))return mapped as number[];if(items.length===1){const amount=financeSellerSubtotal(skuRows[0]);if(amount!==null)return [amount];}}
-            const amounts=matches.map((row:any)=>financeSellerSubtotal(row)).filter((v:any)=>v!==null) as number[];if(amounts.length){const total=amounts.reduce((x,y)=>x+y,0);if(items.length===1)return [total];const weights=items.map(itemFinanceWeight),weightTotal=weights.reduce((x,y)=>x+y,0);if(weightTotal>0){let allocated=0;return weights.map((w,i)=>{if(i===weights.length-1)return Number((total-allocated).toFixed(2));const value=Number((total*w/weightTotal).toFixed(2));allocated+=value;return value;});}}return null;
-          }detailToken=String(dd?.next_page_token||"");if(!detailToken)break;
+          if(matches.length){
+            const skuRows=matches.flatMap((row:any)=>Array.isArray(row?.sku_transactions)?row.sku_transactions:[]);
+            if(skuRows.length){
+              const bySku=new Map<string,number>();
+              for(const row of skuRows){const sid=String(row?.sku_id||"").trim(),amount=financeSellerSubtotal(row);if(sid&&amount!==null)bySku.set(sid,(bySku.get(sid)||0)+amount);}
+              const mapped=items.map(item=>bySku.get(skuId(item))??null);
+              if(mapped.every(v=>v!==null))return mapped as number[];
+              if(items.length===1){const amount=financeSellerSubtotal(skuRows[0]);if(amount!==null)return [amount];}
+            }
+            const amounts=matches.map((row:any)=>financeSellerSubtotal(row)).filter((v:any)=>v!==null) as number[];
+            if(amounts.length){
+              const total=amounts.reduce((x,y)=>x+y,0);
+              if(items.length===1)return [total];
+              const weights=items.map(itemFinanceWeight),weightTotal=weights.reduce((x,y)=>x+y,0);
+              if(weightTotal>0){
+                let allocated=0;
+                return weights.map((w,i)=>{if(i===weights.length-1)return Number((total-allocated).toFixed(2));const value=Number((total*w/weightTotal).toFixed(2));allocated+=value;return value;});
+              }
+            }
+            return null;
+          }
+          const nextDetailToken=String(dd?.next_page_token||"");
+          if(!nextDetailToken)break;
+          if(seenStatementDetailTokens.has(nextDetailToken))throw Error("TIKTOK_STATEMENT_DETAIL_PAGE_TOKEN_REPEATED:"+statementId);
+          seenStatementDetailTokens.add(nextDetailToken);
+          detailToken=nextDetailToken;
         }
-      }listToken=String(data?.next_page_token||"");if(!listToken)break;
-    }return null;
+      }
+      const nextListToken=String(data?.next_page_token||"");
+      if(!nextListToken)break;
+      if(seenStatementPageTokens.has(nextListToken))throw Error("TIKTOK_STATEMENT_PAGE_TOKEN_REPEATED");
+      seenStatementPageTokens.add(nextListToken);
+      listToken=nextListToken;
+    }
+    return null;
   }
   for(const order of found){
     const id=oid(order); if(!id) continue;
