@@ -51,12 +51,16 @@ function sellerBooksGetSalesImportIdentity(transaction){
     const skuKey=String(transaction?.sku||"").trim().toLowerCase();
     if(!orderKey && !packingKey)return "";
 
-    /* Lazada: pertahankan setiap baris sumber sebagai transaksi terpisah.
-       sourceRowIndex sudah dibuat saat import dan harus ikut dalam identity
-       agar baris SKU yang sama dalam Order Number yang sama tidak tergabung. */
+    /* Lazada dan TikTok: pertahankan setiap baris sumber sebagai transaksi
+       terpisah. Untuk TikTok ini penting karena satu Order ID dapat memiliki
+       dua baris SKU identik yang masing-masing membawa QTY tersendiri. */
+    const sourceMarketplace=String(transaction?.marketplace||"").trim().toLowerCase();
+    const sourceMarketplaceId=String(transaction?.marketplaceId||"").trim().toLowerCase();
     if(
-        String(transaction?.marketplace||"").trim().toLowerCase()==="lazada" ||
-        String(transaction?.marketplaceId||"").trim().toLowerCase()==="lazada"
+        sourceMarketplace==="lazada" ||
+        sourceMarketplaceId==="lazada" ||
+        sourceMarketplace==="tiktok" ||
+        sourceMarketplaceId==="tiktok"
     ){
         const sourceRow=String(transaction?.sourceRowIndex ?? "").trim();
         if(sourceRow!==""){
