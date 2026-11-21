@@ -467,7 +467,7 @@ async function integrateStoreAccount(storeId){
             */
             if(window.chrome?.webview?.postMessage){
                 const launcherUrl =
-                    "https://sellerbooks.github.io/marketplace-oauth-launcher.html" +
+                    "https://sellerbooksmbi.github.io/marketplace-oauth-launcher.html" +
                     "?handoff=windows" +
                     "&marketplace_name=" + encodeURIComponent(String(marketplace.name || "")) +
                     "&authorization_url=" + encodeURIComponent(String(data.authorization_url));
