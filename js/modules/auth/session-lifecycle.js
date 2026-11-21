@@ -108,6 +108,7 @@ async function sellerBooksRestoreApprovedCacheAfterCheckError(userId,error){
 
 async function sellerBooksCheckApprovalInternal(showAlert){
     if(!sellerBooksAuthUser)return;
+    try{
         const {data:coreAdmin,error:coreCheckError}=await sellerBooksSupabase.rpc("sellerbooks_is_core_admin");
         if(coreCheckError)throw coreCheckError;
         if(coreAdmin===true){
