@@ -340,7 +340,7 @@ async function integrateStoreAccount(storeId){
     */
     const launcherUrl = new URL(
         "marketplace-oauth-launcher.html" +
-        "?v=20260930-session-bridge" +
+        "?v=20261121-lazada-oauth-v1" +
         "&store_id=" + encodeURIComponent(String(store.id)) +
         "&marketplace_id=" + encodeURIComponent(String(store.marketplaceId || "")) +
         "&marketplace_name=" + encodeURIComponent(String(marketplace.name || "")) +
