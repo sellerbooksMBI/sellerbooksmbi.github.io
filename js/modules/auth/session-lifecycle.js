@@ -55,9 +55,59 @@ async function sellerBooksCheckApproval(showAlert){
     }
 }
 
+/*
+   Fallback aman saat Supabase sementara timeout:
+   - Cache hanya boleh mempertahankan tampilan akun yang sebelumnya APPROVED.
+   - Cache tidak dianggap sebagai bukti persetujuan terbaru dan tidak boleh
+     dipakai untuk menulis data cloud (cloudReady tetap false).
+   - Pemeriksaan server akan dicoba ulang otomatis.
+*/
+async function sellerBooksRestoreApprovedCacheAfterCheckError(userId,error){
+    try{
+        if(!userId || !sellerBooksAuthUser || String(sellerBooksAuthUser.id)!==String(userId))return false;
+        if(typeof sellerBooksFastCacheGet!=="function")return false;
+
+        const cached=await sellerBooksFastCacheGet(userId);
+        if(!cached || !cached.profile || !cached.data || typeof cached.data!=="object")return false;
+        if(String(cached.profile.status||"").toLowerCase()!=="approved")return false;
+        if(!sellerBooksAuthUser || String(sellerBooksAuthUser.id)!==String(userId))return false;
+
+        sellerBooksProfile={
+            ...cached.profile,
+            user_id:userId,
+            email:cached.profile.email||sellerBooksAuthUser.email||""
+        };
+        sellerBooksCloudState={...cached.data};
+        sellerBooksCloudLoading=true;
+        sellerBooksCloudReady=false;
+
+        if(typeof sellerBooksRefreshRuntimeFromCloud==="function"){
+            sellerBooksRefreshRuntimeFromCloud();
+        }
+        sellerBooksOpenApplication();
+        sellerBooksRefreshActiveView();
+
+        console.warn("Supabase belum dapat memverifikasi status akun. Tampilan akun APPROVED dipertahankan dari cache; sinkronisasi cloud menunggu koneksi pulih.",error);
+
+        if(!sellerBooksApprovalTimer){
+            sellerBooksApprovalTimer=setInterval(function(){
+                if(!sellerBooksAuthUser || String(sellerBooksAuthUser.id)!==String(userId)){
+                    clearInterval(sellerBooksApprovalTimer);
+                    sellerBooksApprovalTimer=null;
+                    return;
+                }
+                sellerBooksCheckApproval(false);
+            },15000);
+        }
+        return true;
+    }catch(cacheError){
+        console.warn("Fallback cache persetujuan SellerBooks gagal:",cacheError);
+        return false;
+    }
+}
+
 async function sellerBooksCheckApprovalInternal(showAlert){
     if(!sellerBooksAuthUser)return;
-    try{
         const {data:coreAdmin,error:coreCheckError}=await sellerBooksSupabase.rpc("sellerbooks_is_core_admin");
         if(coreCheckError)throw coreCheckError;
         if(coreAdmin===true){
@@ -99,7 +149,31 @@ async function sellerBooksCheckApprovalInternal(showAlert){
         if(status==="suspended"){sellerBooksShowApproval(sellerBooksAccessText("suspended"));return;}
         sellerBooksShowApproval(sellerBooksAccessText("pending"));
         if(showAlert)sellerBooksAlert(sellerBooksAccessText("approvalPending"));
-    }catch(error){console.error(error);sellerBooksShowApproval(sellerBooksAccessText("readError"));}
+    }catch(error){
+        console.error("Pemeriksaan persetujuan SellerBooks gagal:",error);
+
+        const failedUserId=String(sellerBooksAuthUser?.id||"");
+        const restored=await sellerBooksRestoreApprovedCacheAfterCheckError(failedUserId,error);
+        if(restored)return;
+
+        /*
+           Jika sebelumnya sudah ada profil APPROVED di memori, jangan
+           mengubahnya menjadi halaman persetujuan hanya karena load cloud
+           gagal. Namun data cloud tidak ditandai siap dan tidak boleh ditulis.
+        */
+        if(
+            sellerBooksAuthUser &&
+            sellerBooksProfile &&
+            String(sellerBooksProfile.status||"").toLowerCase()==="approved"
+        ){
+            sellerBooksCloudReady=false;
+            sellerBooksCloudLoading=true;
+            sellerBooksOpenApplication();
+            return;
+        }
+
+        sellerBooksShowApproval(sellerBooksAccessText("readError"));
+    }
 }
 
 function sellerBooksOpenApplication(){
