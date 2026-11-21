@@ -1057,11 +1057,12 @@ function saveSalesImportData(){
                 reportDate:
                     reportDate,
 
-                /* Penanda baris khusus Lazada agar
-                   SKU yang sama dalam order yang sama
-                   tidak digabung menjadi 1 transaksi. */
+                /* Simpan nomor baris sumber untuk Lazada dan TikTok.
+                   TikTok dapat mengirim SKU identik pada Order ID yang sama
+                   sebagai dua baris QTY terpisah; keduanya wajib dipertahankan. */
                 sourceRowIndex:
-                    currentSalesImport.marketplace === "Lazada"
+                    currentSalesImport.marketplace === "Lazada" ||
+                    currentSalesImport.marketplace === "TikTok"
                         ? rowIndex
                         : null,
 
